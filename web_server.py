@@ -32,7 +32,7 @@ class WebServer:
                  webui_host: str = "127.0.0.1",
                  webui_trust_proxy: bool = False,
                  vision_llm=None, use_vision_check: bool = False,
-                 vision_model_id: str = "", checkin_wait: int = 5):
+                 checkin_wait: int = 5):
         self.browser_manager = browser_manager
         self.checkin_manager = checkin_manager
         self.recorder = recorder
@@ -45,7 +45,6 @@ class WebServer:
         self.webui_session_timeout = max(int(webui_session_timeout), 1) * 60
         self.vision_llm = vision_llm
         self.use_vision_check = use_vision_check
-        self.vision_model_id = vision_model_id
         self.checkin_wait = checkin_wait
         self._auth_cookie_name = "autocheckin_webui_session"
         self._sessions: dict[str, dict] = {}
@@ -668,7 +667,6 @@ class WebServer:
         """获取识图验证配置状态"""
         return web.json_response({
             "enabled": self.use_vision_check,
-            "model_id": self.vision_model_id,
         })
 
     async def _api_save_vision(self, request: web.Request) -> web.Response:

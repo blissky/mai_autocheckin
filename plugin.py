@@ -131,39 +131,37 @@ def format_cron_for_display(rules: list[CronRule]) -> str:
 
 # ==================== 配置模型 ====================
 
-class PluginSectionConfig(PluginConfigBase):
-    """插件基础配置"""
-
-    __ui_label__ = "插件"
-    __ui_icon__ = "package"
-    __ui_order__ = 0
-
-    enabled: bool = Field(default=True, description="是否启用插件功能（WebUI 与定时签到）")
-    config_version: str = Field(default="1.0.0", description="配置版本")
-
-
 class WebUISectionConfig(PluginConfigBase):
     """WebUI 配置"""
 
     __ui_label__ = "WebUI"
     __ui_icon__ = "language"
-    __ui_order__ = 1
+    __ui_order__ = 0
 
-    port: int = Field(default=9010, description="WebUI 控制面板端口")
+    port: int = Field(default=9010, title="端口", description="WebUI 控制面板端口")
     host: str = Field(
         default="127.0.0.1",
-        description="WebUI 监听地址，127.0.0.1 仅限本机访问，0.0.0.0 允许外部访问",
+        title="监听地址",
+        description="127.0.0.1 仅限本机访问，0.0.0.0 允许外部访问",
     )
     token: str = Field(
         default="sk-change-me",
-        description="WebUI 登录密钥，请务必修改默认值",
+        title="登录密钥",
+        description="访问 WebUI 时需要输入，请务必修改默认值",
     )
-    session_timeout: int = Field(default=30, description="WebUI 登录空闲超时（分钟）")
+    session_timeout: int = Field(
+        default=30, title="登录空闲超时（分钟）",
+        description="超时未操作后需要重新登录 WebUI",
+    )
     trust_proxy: bool = Field(
         default=False,
-        description="是否信任 X-Forwarded-For 请求头（仅在经反向代理访问时开启）",
+        title="信任反向代理",
+        description="信任 X-Forwarded-For 请求头识别客户端 IP，仅在经反向代理访问时开启",
     )
-    screenshot_interval: int = Field(default=500, description="WebUI 画面刷新间隔（毫秒）")
+    screenshot_interval: int = Field(
+        default=500, title="画面刷新间隔（毫秒）",
+        description="WebUI 中浏览器画面的截图刷新间隔",
+    )
 
 
 class ScheduleSectionConfig(PluginConfigBase):
@@ -171,13 +169,17 @@ class ScheduleSectionConfig(PluginConfigBase):
 
     __ui_label__ = "定时计划"
     __ui_icon__ = "schedule"
-    __ui_order__ = 2
+    __ui_order__ = 1
 
     cron_rules: str = Field(
         default="30 8 * * *",
-        description="定时签到计划，每行一条 5 字段 Cron 表达式（分 时 日 月 周），# 开头为注释",
+        title="签到计划",
+        description="每行一条 5 字段 Cron 表达式（分 时 日 月 周），# 开头为注释",
     )
-    timezone: str = Field(default="Asia/Shanghai", description="定时签到使用的时区")
+    timezone: str = Field(
+        default="Asia/Shanghai", title="时区",
+        description="定时签到使用的时区",
+    )
 
 
 class BrowserSectionConfig(PluginConfigBase):
@@ -185,46 +187,38 @@ class BrowserSectionConfig(PluginConfigBase):
 
     __ui_label__ = "浏览器"
     __ui_icon__ = "public"
-    __ui_order__ = 3
+    __ui_order__ = 2
 
-    headless: bool = Field(default=True, description="无头模式运行浏览器")
-    page_load_timeout: int = Field(default=30, description="站点页面加载超时（秒）")
-    action_delay: int = Field(default=1000, description="回放操作之间的最小间隔（毫秒）")
+    headless: bool = Field(
+        default=True, title="无头模式",
+        description="不显示浏览器窗口运行，服务器环境请保持开启",
+    )
+    page_load_timeout: int = Field(
+        default=30, title="页面加载超时（秒）",
+        description="站点页面加载的最长等待时间",
+    )
+    action_delay: int = Field(
+        default=1000, title="操作间隔（毫秒）",
+        description="回放录制操作之间的最小间隔",
+    )
     checkin_wait: int = Field(
         default=5,
-        description="站点导航完成后、识图预检与动作回放前的等待（秒）",
+        title="签到前等待（秒）",
+        description="站点导航完成后、识图预检与动作回放前的等待时间",
     )
     idle_timeout: int = Field(
         default=10,
-        description="浏览器空闲自动关闭时间（分钟），0 表示禁用",
-    )
-
-
-class VisionSectionConfig(PluginConfigBase):
-    """识图验证配置"""
-
-    __ui_label__ = "识图验证"
-    __ui_icon__ = "visibility"
-    __ui_order__ = 4
-
-    use_vision_check: bool = Field(
-        default=False,
-        description="启用多模态大模型识图验证签到结果（需站点配置识图选区与关键词）",
-    )
-    vision_model: str = Field(
-        default="",
-        description="识图使用的模型名称，留空使用宿主默认模型（需支持图像输入）",
+        title="空闲自动关闭（分钟）",
+        description="浏览器空闲超过该时长后自动关闭，0 表示禁用",
     )
 
 
 class AutoCheckinConfig(PluginConfigBase):
     """插件完整配置"""
 
-    plugin: PluginSectionConfig = Field(default_factory=PluginSectionConfig)
     webui: WebUISectionConfig = Field(default_factory=WebUISectionConfig)
     schedule: ScheduleSectionConfig = Field(default_factory=ScheduleSectionConfig)
     browser: BrowserSectionConfig = Field(default_factory=BrowserSectionConfig)
-    vision: VisionSectionConfig = Field(default_factory=VisionSectionConfig)
 
 
 # ==================== 插件主体 ====================
@@ -248,6 +242,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
         self._scheduler_task: asyncio.Task | None = None
         self._idle_check_task: asyncio.Task | None = None
         self._services_started = False
+        # 识图验证开关：由宿主是否配置 vlm 任务决定（启动时检测）
+        self._use_vision_check = False
 
     # ==================== 生命周期 ====================
 
@@ -255,10 +251,6 @@ class AutoCheckinPlugin(MaiBotPlugin):
         """插件加载 - 启动 WebUI 和定时任务"""
         self.data_dir = str(self.ctx.paths.data_dir)
         Path(self.data_dir).mkdir(parents=True, exist_ok=True)
-
-        if not self.config.plugin.enabled:
-            self.ctx.logger.info("自动签到插件未启用（plugin.enabled=false），跳过启动")
-            return
 
         await self._start_services()
 
@@ -276,10 +268,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
         self.ctx.logger.info("检测到插件配置更新，正在重启内部服务...")
         await self._stop_services()
-        if self.config.plugin.enabled:
-            await self._start_services()
-        else:
-            self.ctx.logger.info("插件已被配置禁用（plugin.enabled=false）")
+        await self._start_services()
 
     async def _start_services(self) -> None:
         """按当前配置启动全部内部服务"""
@@ -289,6 +278,9 @@ class AutoCheckinPlugin(MaiBotPlugin):
         cfg = self.config
         self.cron_rules = parse_cron_rules(cfg.schedule.cron_rules)
         self.timezone = self._parse_timezone(cfg.schedule.timezone)
+
+        # 检测宿主是否配置 vlm（视觉）任务，决定是否启用识图验证
+        await self._detect_vision_support()
 
         # 确保 Python 包、系统依赖和 Camoufox 浏览器二进制已就绪
         self._ensure_python_deps()
@@ -315,8 +307,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
             webui_host=cfg.webui.host,
             webui_trust_proxy=cfg.webui.trust_proxy,
             vision_llm=self._vision_llm,
-            use_vision_check=cfg.vision.use_vision_check,
-            vision_model_id=cfg.vision.vision_model,
+            use_vision_check=self._use_vision_check,
             checkin_wait=cfg.browser.checkin_wait,
         )
 
@@ -378,8 +369,22 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
     # ==================== 识图 LLM 回调 ====================
 
+    async def _detect_vision_support(self) -> None:
+        """检测宿主是否配置 vlm（视觉）任务，自动决定识图验证开关"""
+        try:
+            models = await self.ctx.llm.get_available_models()
+            self._use_vision_check = "vlm" in (models or [])
+            if self._use_vision_check:
+                self.ctx.logger.info("检测到宿主已配置 vlm 任务，识图验证已启用")
+            else:
+                self.ctx.logger.info(
+                    f"宿主未配置 vlm 任务，识图验证已禁用（可用模型/任务: {models}）")
+        except Exception as e:
+            self._use_vision_check = False
+            self.ctx.logger.warning(f"检测宿主 vlm 任务失败，识图验证已禁用: {e}")
+
     async def _vision_llm(self, img_b64: str, prompt: str) -> str:
-        """调用宿主多模态 LLM 识别截图文字，供 recorder.vision_check 使用"""
+        """调用宿主 vlm 任务识别截图文字，供 recorder.vision_check 使用"""
         result = await self.ctx.llm.generate(
             prompt=[{
                 "role": "user",
@@ -391,7 +396,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
                     {"type": "text", "text": prompt},
                 ],
             }],
-            model=self.config.vision.vision_model,
+            model="vlm",
         )
         if not result.get("success"):
             raise RuntimeError(f"LLM 调用失败: {result.get('response') or result}")
@@ -689,7 +694,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
             self.browser_manager, self.checkin_manager,
             self.config.browser.action_delay,
             vision_llm=self._vision_llm,
-            use_vision_check=self.config.vision.use_vision_check,
+            use_vision_check=self._use_vision_check,
             checkin_wait=self.config.browser.checkin_wait,
         )
 
@@ -763,8 +768,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
         sub = (kwargs.get("matched_groups") or {}).get("sub") or ""
 
         if not self._services_started:
-            await self.ctx.send.text("自动签到插件未启用，请在插件配置中开启 plugin.enabled。", stream_id)
-            return False, "插件未启用", 2
+            await self.ctx.send.text("自动签到插件服务未就绪（可能正在启动或启动失败），请检查 MaiBot 日志。", stream_id)
+            return False, "插件服务未就绪", 2
 
         if sub == "执行":
             return await self._cmd_run_all(stream_id)
@@ -803,7 +808,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
             self.browser_manager, self.checkin_manager,
             self.config.browser.action_delay,
             vision_llm=self._vision_llm,
-            use_vision_check=self.config.vision.use_vision_check,
+            use_vision_check=self._use_vision_check,
             checkin_wait=self.config.browser.checkin_wait,
         )
         msg = self._format_checkin_result(results)
@@ -886,8 +891,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
         site_name = ((kwargs.get("matched_groups") or {}).get("site") or "").strip()
 
         if not self._services_started:
-            await self.ctx.send.text("自动签到插件未启用，请在插件配置中开启 plugin.enabled。", stream_id)
-            return False, "插件未启用", 2
+            await self.ctx.send.text("自动签到插件服务未就绪（可能正在启动或启动失败），请检查 MaiBot 日志。", stream_id)
+            return False, "插件服务未就绪", 2
 
         site = self.checkin_manager.get_site(site_name)
         if not site:
@@ -912,7 +917,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
             self.browser_manager, self.checkin_manager, site,
             self.config.browser.action_delay,
             vision_llm=self._vision_llm,
-            use_vision_check=self.config.vision.use_vision_check,
+            use_vision_check=self._use_vision_check,
             checkin_wait=self.config.browser.checkin_wait,
         )
 
