@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "id": "blissky.autocheckin",
+  "version": "1.0.0",
+  "name": "自动签到",
+  "description": "通过 Camoufox 浏览器自动化实现多网站每日定时签到，支持 WebUI 可视化操作、签到流程录制回放与识图验证。",
+  "author": {
+    "name": "blissky",
+    "url": "https://github.com/blissky"
+  },
+  "license": "AGPL-3.0",
+  "urls": {
+    "repository": "https://github.com/blissky/mai_autocheckin"
+  },
+  "host_application": {
+    "min_version": "1.0.0",
+    "max_version": "1.99.99"
+  },
+  "sdk": {
+    "min_version": "2.5.1",
+    "max_version": "2.99.99"
+  },
+  "plugin_type": "integration",
+  "dependencies": [
+    {
+      "type": "python_package",
+      "name": "camoufox",
+      "version_spec": ">=0.4.0"
+    },
+    {
+      "type": "python_package",
+      "name": "aiohttp",
+      "version_spec": ">=3.9.0"
+    }
+  ],
+  "capabilities": [
+    "send_message"
+  ],
+  "i18n": {
+    "default_locale": "zh-CN"
+  }
+}

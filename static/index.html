@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自动签到 - 控制面板</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --surface2: #0f3460;
+  --accent: #e94560;
+  --accent2: #0ea5e9;
+  --text: #e0e0e0;
+  --text2: #a0a0b0;
+  --border: #2a2a4a;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --radius: 8px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans SC", sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+
+/* Layout */
+.app { display: flex; height: 100vh; }
+.sidebar { width: 360px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* Header */
+.header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header .dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.dot.off { background: var(--danger); }
+
+/* Toolbar */
+.toolbar { padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.toolbar input[type="text"] {
+  flex: 1; min-width: 200px; padding: 6px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  font-size: 13px; outline: none;
+}
+.toolbar input:focus { border-color: var(--accent2); }
+
+/* Buttons */
+.btn {
+  padding: 6px 14px; border: none; border-radius: var(--radius);
+  font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  transition: opacity 0.15s;
+}
+.btn:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--accent2); color: #fff; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-success { background: var(--success); color: #fff; }
+.btn-warning { background: var(--warning); color: #000; }
+.btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-record { background: var(--danger); color: #fff; animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+/* Browser Canvas */
+.canvas-wrap {
+  flex: 1; position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: #000;
+}
+.canvas-wrap canvas { max-width: 100%; max-height: 100%; cursor: default; }
+.canvas-wrap .no-browser {
+  color: var(--text2); font-size: 16px; text-align: center;
+}
+
+/* Sidebar Tabs */
+.tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tab {
+  flex: 1; padding: 10px; text-align: center; font-size: 13px;
+  cursor: pointer; border-bottom: 2px solid transparent; color: var(--text2);
+  transition: all 0.2s;
+}
+.tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+.tab:hover { color: var(--text); }
+
+.tab-content { flex: 1; overflow-y: auto; padding: 16px; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Site List */
+.site-item {
+  padding: 12px; margin-bottom: 8px; border-radius: var(--radius);
+  background: var(--bg); border: 1px solid var(--border); position: relative;
+}
+.site-item .si-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.site-item .si-name { font-weight: 600; font-size: 14px; }
+.site-item .si-url { font-size: 11px; color: var(--text2); word-break: break-all; }
+.site-item .si-status { font-size: 11px; margin-top: 4px; }
+.site-item .si-actions { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+.si-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+}
+.si-badge.on { background: rgba(16,185,129,0.15); color: var(--success); }
+.si-badge.off { background: rgba(239,68,68,0.15); color: var(--danger); }
+.si-badge.ok { background: rgba(16,185,129,0.15); color: var(--success); }
+.si-badge.fail { background: rgba(239,68,68,0.15); color: var(--danger); }
+.si-badge.none { background: rgba(160,160,176,0.15); color: var(--text2); }
+
+/* Add Site Form */
+.add-form { margin-bottom: 16px; }
+.add-form input {
+  width: 100%; padding: 8px 12px; margin-bottom: 8px;
+  border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-size: 13px; outline: none;
+}
+.add-form input:focus { border-color: var(--accent2); }
+
+/* Record Panel */
+.record-info { padding: 12px; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--border); margin-bottom: 12px; }
+.record-info p { font-size: 13px; margin-bottom: 4px; }
+.action-list { max-height: 300px; overflow-y: auto; }
+.action-item { padding: 6px 10px; font-size: 12px; border-bottom: 1px solid var(--border); color: var(--text2); }
+.action-item:last-child { border-bottom: none; }
+
+/* Toast */
+.toast-container { position: fixed; top: 16px; right: 16px; z-index: 9999; }
+.toast {
+  padding: 10px 18px; border-radius: var(--radius); margin-bottom: 8px;
+  font-size: 13px; color: #fff; opacity: 0; transform: translateX(30px);
+  animation: toastIn 0.3s forwards;
+}
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
+.toast.info { background: var(--accent2); }
+@keyframes toastIn { to { opacity: 1; transform: translateX(0); } }
+
+/* Status Bar */
+.statusbar {
+  padding: 6px 20px; border-top: 1px solid var(--border); background: var(--surface);
+  font-size: 12px; color: var(--text2); display: flex; gap: 20px;
+}
+
+/* Modal */
+.modal-overlay {
+  display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5); z-index: 9998;
+  justify-content: center; align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal-box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px; width: 480px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+/* Action Editor */
+.action-editor-item {
+  padding: 8px 10px; margin-bottom: 6px; border-radius: var(--radius);
+  background: var(--bg); border: 1px solid var(--border);
+  font-size: 12px; position: relative;
+}
+.action-editor-item:hover { border-color: var(--accent2); }
+.action-editor-item .ae-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+}
+.action-editor-item .ae-step {
+  color: var(--accent2); font-weight: 600; min-width: 28px;
+}
+.action-editor-item .ae-type {
+  flex: 1; font-weight: 500; color: var(--text);
+}
+.action-editor-item .ae-btns { display: flex; gap: 2px; }
+.action-editor-item .ae-btns button {
+  background: none; border: none; color: var(--text2); cursor: pointer;
+  font-size: 14px; padding: 2px 5px; border-radius: 4px; line-height: 1;
+}
+.action-editor-item .ae-btns button:hover { background: var(--surface2); color: var(--text); }
+.action-editor-item .ae-detail {
+  color: var(--text2); margin-top: 4px; font-size: 11px; word-break: break-all;
+}
+.ae-edit-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.ae-edit-form label { font-size: 11px; color: var(--text2); }
+.ae-edit-form input, .ae-edit-form select {
+  padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 12px; outline: none;
+}
+.ae-edit-form input:focus { border-color: var(--accent2); }
+.ae-edit-form .ae-row { display: flex; gap: 6px; align-items: center; }
+.ae-edit-form .ae-row input { flex: 1; }
+.action-add-btn {
+  width: 100%; padding: 8px; border: 2px dashed var(--border); border-radius: var(--radius);
+  background: none; color: var(--text2); cursor: pointer; font-size: 12px;
+  margin-top: 4px; transition: all 0.2s;
+}
+.action-add-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+/* Auth */
+.auth-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  display: none; align-items: center; justify-content: center;
+  background:
+    radial-gradient(circle at top right, rgba(14,165,233,0.2), transparent 35%),
+    radial-gradient(circle at bottom left, rgba(233,69,96,0.18), transparent 30%),
+    rgba(6,10,22,0.96);
+  backdrop-filter: blur(8px);
+}
+.auth-overlay.active { display: flex; }
+.auth-card {
+  width: 420px; max-width: calc(100vw - 32px);
+  background: rgba(22,33,62,0.96); border: 1px solid var(--border);
+  border-radius: 18px; padding: 28px; box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+}
+.auth-card h2 { font-size: 24px; margin-bottom: 10px; }
+.auth-card p { color: var(--text2); font-size: 13px; line-height: 1.7; margin-bottom: 14px; }
+.auth-input {
+  width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-size: 14px; outline: none;
+}
+.auth-input:focus { border-color: var(--accent2); }
+.auth-actions { display: flex; gap: 10px; margin-top: 14px; }
+.auth-msg { min-height: 20px; margin-top: 12px; font-size: 12px; color: var(--warning); }
+</style>
+</head>
+<body>
+<div class="auth-overlay active" id="authOverlay">
+  <div class="auth-card">
+    <h2>WebUI 登录</h2>
+    <p>请输入插件配置中的登录密钥进入控制面板。切换访问 IP 或长时间无操作后需要重新登录。</p>
+    <input type="password" id="loginToken" class="auth-input" placeholder="请输入 WebUI 登录密钥" autocomplete="current-password">
+    <div class="auth-actions">
+      <button class="btn btn-primary" id="btnLogin">登录</button>
+    </div>
+    <div class="auth-msg" id="loginMessage"></div>
+  </div>
+</div>
+<div class="app">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="header">
+      <h1>自动签到</h1>
+      <span class="dot off" id="browserDot"></span>
+      <span id="browserStatus" style="font-size:12px;color:var(--text2)">未连接</span>
+      <button class="btn btn-ghost btn-sm" id="btnLogout" onclick="logoutWebui()" style="margin-left:auto;display:none">退出登录</button>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="sites">站点管理</div>
+      <div class="tab" data-tab="record">录制操作</div>
+      <div class="tab" data-tab="vision" id="tabVision" style="display:none">识图选区</div>
+      <div class="tab" data-tab="actions">操作日志</div>
+    </div>
+
+    <!-- 站点管理 -->
+    <div class="tab-content">
+      <div class="tab-panel active" id="panel-sites">
+        <div class="add-form">
+          <input type="text" id="siteName" placeholder="站点名称（如：吾爱破解）">
+          <input type="text" id="siteUrl" placeholder="签到页URL（如：https://...）">
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="addSite()">添加站点</button>
+            <button class="btn btn-success btn-sm" onclick="checkinAll()">全部签到</button>
+          </div>
+        </div>
+        <div id="siteList"></div>
+      </div>
+
+      <!-- 录制操作 -->
+      <div class="tab-panel" id="panel-record">
+        <div class="record-info">
+          <p><strong>录制状态：</strong><span id="recordStatus">未录制</span></p>
+          <p><strong>已录制操作：</strong><span id="recordCount">0</span> 步</p>
+          <p style="color:var(--text2);font-size:12px;margin-top:8px">
+            录制步骤：<br>
+            1. 在右侧浏览器中导航到签到页<br>
+            2. 点击"开始录制"<br>
+            3. 在浏览器画面中完成签到操作<br>
+            4. 点击"停止录制"<br>
+            5. 将录制结果保存到指定站点
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-danger btn-sm" id="btnRecord" onclick="toggleRecord()">开始录制</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearRecordActions()">清空操作</button>
+        </div>
+        <div style="margin-bottom:8px">
+          <select id="saveTarget" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+            <option value="">-- 选择站点 --</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-success btn-sm" onclick="saveRecordToSite()" id="btnSaveRecord" disabled>保存到站点</button>
+          <button class="btn btn-primary btn-sm" onclick="loadActionsFromSite()">加载站点操作</button>
+        </div>
+
+        <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text2)">操作编辑 <span id="actionEditorCount" style="color:var(--accent2)"></span></h4>
+        <div id="actionList"></div>
+      </div>
+
+      <!-- 识图选区 -->
+      <div class="tab-panel" id="panel-vision">
+        <div class="record-info">
+          <p style="color:var(--text2);font-size:12px">
+            使用说明：<br>
+            1. 先完成签到操作，使页面显示签到结果<br>
+            2. 点击"开始选区"，在右侧画面中拖拽选择包含签到结果文字的区域<br>
+            3. 设置识图关键词（支持正则表达式）<br>
+            4. 点击"测试识图"验证识别效果<br>
+            5. 保存选区和关键词到指定站点
+          </p>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="btnVisionSelect" onclick="toggleVisionSelect()">开始选区</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearVisionRegion()">清除选区</button>
+        </div>
+
+        <div class="record-info" id="visionRegionInfo">
+          <p><strong>选区坐标：</strong><span id="visionRegionText">未设置</span></p>
+        </div>
+
+        <div style="margin-bottom:8px">
+          <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">识图关键词（支持正则表达式）</label>
+          <input type="text" id="visionKeywords" placeholder="如：签到成功|已签到|今日已签" style="width:100%;padding:8px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none">
+          <p style="font-size:11px;color:var(--text2);margin-top:4px">示例：签到成功|已签到|今日已打卡 （竖线分隔多个关键词）</p>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-warning btn-sm" onclick="testVision()">测试识图</button>
+        </div>
+
+        <div style="margin-bottom:8px">
+          <select id="visionSaveTarget" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+            <option value="">-- 选择保存到站点 --</option>
+          </select>
+        </div>
+        <button class="btn btn-success btn-sm" onclick="saveVisionToSite()" id="btnSaveVision">保存选区到站点</button>
+
+        <div id="visionTestResult" style="margin-top:12px;display:none">
+          <h4 style="font-size:13px;color:var(--text2);margin-bottom:8px">识别结果</h4>
+          <div class="record-info">
+            <div id="visionTestImage" style="margin-bottom:8px"></div>
+            <p><strong>匹配状态：</strong><span id="visionMatchStatus">-</span></p>
+            <p><strong>匹配内容：</strong><span id="visionMatchText">-</span></p>
+            <p style="margin-top:8px"><strong>LLM 返回文本：</strong></p>
+            <pre id="visionLlmText" style="white-space:pre-wrap;word-break:break-all;font-size:12px;color:var(--text2);max-height:200px;overflow-y:auto;background:var(--bg);padding:8px;border-radius:var(--radius);margin-top:4px"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作日志 -->
+      <div class="tab-panel" id="panel-actions">
+        <div id="logList" style="font-size:12px;color:var(--text2)">
+          <p>暂无日志</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Area -->
+  <div class="main">
+    <div class="toolbar">
+      <input type="text" id="urlBar" placeholder="输入URL并回车导航..." onkeydown="if(event.key==='Enter')navigateTo()">
+      <button class="btn btn-primary btn-sm" onclick="navigateTo()">前往</button>
+      <button class="btn btn-warning btn-sm" onclick="showSendTextModal()">发送文本</button>
+      <button class="btn btn-ghost btn-sm" onclick="launchBrowser()" id="btnLaunch">启动浏览器</button>
+      <button class="btn btn-ghost btn-sm" onclick="shutdownBrowser()">关闭浏览器</button>
+    </div>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="no-browser" id="noBrowser">
+        <p style="font-size:40px;margin-bottom:16px">&#128421;</p>
+        <p>浏览器未启动</p>
+        <p style="font-size:13px;margin-top:8px">点击上方"启动浏览器"开始</p>
+      </div>
+      <canvas id="browserCanvas" style="display:none"></canvas>
+      <div id="visionOverlay" style="display:none;position:absolute;border:2px dashed var(--accent);background:rgba(233,69,96,0.15);pointer-events:none;z-index:10"></div>
+    </div>
+
+    <div class="statusbar">
+      <span>画面: <span id="fpsDisplay">0</span> FPS</span>
+      <span>站点: <span id="siteCountDisplay">0</span></span>
+      <span>URL: <span id="currentUrlDisplay">-</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- 发送文本悬浮窗 -->
+<div class="modal-overlay" id="sendTextModal">
+  <div class="modal-box">
+    <h3 style="text-align:center;margin-bottom:12px;font-size:16px">发送文本</h3>
+    <p style="background:rgba(14,165,233,0.12);color:var(--accent2);padding:8px 12px;border-radius:var(--radius);font-size:13px;margin-bottom:12px;text-align:center">
+      支持中文及各类字符，文本将逐字输入到浏览器当前焦点位置。
+    </p>
+    <textarea id="sendTextArea" rows="6" placeholder="输入要发送的文本" style="width:100%;padding:10px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;resize:vertical;outline:none;font-family:inherit"></textarea>
+    <div style="display:flex;justify-content:center;gap:16px;margin-top:14px">
+      <button class="btn btn-primary" onclick="doSendText()">发送</button>
+      <button class="btn btn-danger" onclick="hideSendTextModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 添加操作悬浮窗 -->
+<div class="modal-overlay" id="addActionModal">
+  <div class="modal-box">
+    <h3 style="text-align:center;margin-bottom:12px;font-size:16px">添加操作步骤</h3>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">操作类型</label>
+        <select id="addActionType" onchange="onAddActionTypeChange()" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <option value="click">点击</option>
+          <option value="drag">拖动</option>
+          <option value="type">输入文本</option>
+          <option value="press_key">按键</option>
+          <option value="navigate">导航</option>
+          <option value="scroll">滚动</option>
+          <option value="wait">等待</option>
+        </select>
+      </div>
+      <div id="addActionFields"></div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">操作间隔 (秒)</label>
+        <input type="number" id="addActionDelay" value="1" step="0.1" min="0" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      </div>
+    </div>
+    <div style="display:flex;justify-content:center;gap:16px;margin-top:14px">
+      <button class="btn btn-primary" onclick="confirmAddAction()">添加</button>
+      <button class="btn btn-danger" onclick="hideAddActionModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ==================== State ====================
+let ws = null;
+let canvas, ctx;
+let isRecording = false;
+let recordedActions = [];
+let sites = [];
+let frameCount = 0;
+let lastFpsTime = Date.now();
+const logs = [];
+let isAuthenticated = false;
+let runtimeStarted = false;
+let statusTimer = null;
+let fpsTimer = null;
+
+// ==================== Init ====================
+document.addEventListener('DOMContentLoaded', () => {
+  canvas = document.getElementById('browserCanvas');
+  ctx = canvas.getContext('2d');
+  setupTabs();
+  setupCanvasEvents();
+  setupAuthEvents();
+  window.addEventListener('unhandledrejection', (e) => {
+    if (e.reason && e.reason.message === 'AUTH_REQUIRED') {
+      e.preventDefault();
+    }
+  });
+  initAuth();
+});
+
+function setupAuthEvents() {
+  document.getElementById('btnLogin').addEventListener('click', submitLogin);
+  document.getElementById('loginToken').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitLogin();
+    }
+  });
+}
+
+async function initAuth() {
+  const authenticated = await checkAuthStatus();
+  if (authenticated) {
+    onLoginSuccess();
+  }
+}
+
+// ==================== Tabs ====================
+function setupTabs() {
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+}
+
+// ==================== WebSocket ====================
+function connectWebSocket() {
+  if (!isAuthenticated) return;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  ws.binaryType = 'blob';
+
+  ws.onopen = () => {
+    addLog('WebSocket 已连接');
+  };
+  ws.onclose = async () => {
+    if (!isAuthenticated) return;
+    addLog('WebSocket 断开，3秒后重连...');
+    setTimeout(async () => {
+      const authenticated = await checkAuthStatus();
+      if (authenticated && isAuthenticated) connectWebSocket();
+    }, 3000);
+  };
+  ws.onerror = () => {};
+
+  ws.onmessage = (e) => {
+    if (e.data instanceof Blob) {
+      const url = URL.createObjectURL(e.data);
+      const img = new Image();
+      img.onload = () => {
+        if (canvas.width !== img.width || canvas.height !== img.height) {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        frameCount++;
+        if (visionRegion) updateVisionOverlay();
+
+        canvas.style.display = 'block';
+        document.getElementById('noBrowser').style.display = 'none';
+      };
+      img.src = url;
+    }
+  };
+}
+
+function sendWS(data) {
+  if (isAuthenticated && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
+
+// ==================== Canvas Events ====================
+function setupCanvasEvents() {
+  const c = document.getElementById('browserCanvas');
+
+  function getPos(e) {
+    const rect = c.getBoundingClientRect();
+    const scaleX = c.width / rect.width;
+    const scaleY = c.height / rect.height;
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+  }
+
+  // 拖拽检测：mousedown -> mousemove -> mouseup
+  let dragState = null; // { startPos, moved }
+  const DRAG_THRESHOLD = 5; // 像素，超过此距离视为拖拽
+
+  c.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return; // 仅左键
+    const pos = getPos(e);
+    dragState = { startPos: pos, moved: false };
+  });
+
+  c.addEventListener('mousemove', (e) => {
+    if (!dragState) return;
+    const pos = getPos(e);
+    const dx = pos.x - dragState.startPos.x;
+    const dy = pos.y - dragState.startPos.y;
+    if (!dragState.moved && (dx*dx + dy*dy) > DRAG_THRESHOLD * DRAG_THRESHOLD) {
+      dragState.moved = true;
+      // 开始拖拽，发送 mousedown
+      sendWS({ action: 'mousedown', x: dragState.startPos.x, y: dragState.startPos.y });
+    }
+    if (dragState.moved) {
+      sendWS({ action: 'mousemove', x: pos.x, y: pos.y });
+    }
+  });
+
+  c.addEventListener('mouseup', (e) => {
+    if (!dragState) return;
+    const pos = getPos(e);
+    if (dragState.moved) {
+      // 拖拽结束
+      sendWS({ action: 'mouseup', x: pos.x, y: pos.y });
+      // 如果正在录制，发送完整 drag 操作
+      sendWS({ action: 'drag', fromX: dragState.startPos.x, fromY: dragState.startPos.y, toX: pos.x, toY: pos.y });
+    } else {
+      // 未超过阈值，视为普通点击
+      sendWS({ action: 'click', x: pos.x, y: pos.y });
+    }
+    dragState = null;
+  });
+
+  // 鼠标离开 canvas 时结束拖拽
+  c.addEventListener('mouseleave', (e) => {
+    if (dragState && dragState.moved) {
+      const pos = getPos(e);
+      sendWS({ action: 'mouseup', x: pos.x, y: pos.y });
+    }
+    dragState = null;
+  });
+
+  c.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    const pos = getPos(e);
+    sendWS({ action: 'dblclick', x: pos.x, y: pos.y });
+  });
+
+  c.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const pos = getPos(e);
+    sendWS({ action: 'scroll', x: pos.x, y: pos.y, deltaY: e.deltaY });
+  }, { passive: false });
+
+  // 键盘输入
+  c.setAttribute('tabindex', '0');
+  c.addEventListener('keydown', (e) => {
+    e.preventDefault();
+    if (e.key.length === 1) {
+      sendWS({ action: 'type', text: e.key });
+    } else {
+      const keyMap = {
+        'Enter': 'Enter', 'Backspace': 'Backspace', 'Tab': 'Tab',
+        'Escape': 'Escape', 'ArrowUp': 'ArrowUp', 'ArrowDown': 'ArrowDown',
+        'ArrowLeft': 'ArrowLeft', 'ArrowRight': 'ArrowRight',
+        'Delete': 'Delete', 'Home': 'Home', 'End': 'End',
+        'PageUp': 'PageUp', 'PageDown': 'PageDown',
+      };
+      if (keyMap[e.key]) {
+        sendWS({ action: 'keydown', key: keyMap[e.key] });
+      }
+    }
+  });
+}
+
+// ==================== API Calls ====================
+async function api(url, method = 'GET', body = null) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin'
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  let data = {};
+  try {
+    data = await res.json();
+  } catch(e) {}
+
+  if (res.status === 401) {
+    handleAuthExpired(data.message || '登录已失效，请重新登录');
+    throw new Error('AUTH_REQUIRED');
+  }
+
+  return data;
+}
+
+async function checkAuthStatus() {
+  try {
+    const res = await fetch('/api/auth/status', { credentials: 'same-origin' });
+    const data = await res.json();
+    if (data.authenticated) {
+      return true;
+    }
+    if (data.message) {
+      showLoginOverlay(data.message);
+    }
+  } catch(e) {
+    showLoginOverlay('无法连接 WebUI，请稍后重试。');
+  }
+  return false;
+}
+
+function showLoginOverlay(message = '') {
+  isAuthenticated = false;
+  stopRuntime();
+  document.getElementById('authOverlay').classList.add('active');
+  document.getElementById('btnLogout').style.display = 'none';
+  document.getElementById('loginMessage').textContent = message;
+  const input = document.getElementById('loginToken');
+  input.value = '';
+  setTimeout(() => input.focus(), 50);
+}
+
+function hideLoginOverlay() {
+  document.getElementById('authOverlay').classList.remove('active');
+  document.getElementById('loginMessage').textContent = '';
+}
+
+function onLoginSuccess() {
+  isAuthenticated = true;
+  hideLoginOverlay();
+  document.getElementById('btnLogout').style.display = 'inline-flex';
+  startRuntime();
+}
+
+function startRuntime() {
+  if (runtimeStarted) return;
+  runtimeStarted = true;
+  connectWebSocket();
+  refreshSites();
+  refreshStatus();
+  initVision();
+  statusTimer = setInterval(refreshStatus, 3000);
+  fpsTimer = setInterval(updateFps, 1000);
+}
+
+function stopRuntime() {
+  runtimeStarted = false;
+  if (statusTimer) {
+    clearInterval(statusTimer);
+    statusTimer = null;
+  }
+  if (fpsTimer) {
+    clearInterval(fpsTimer);
+    fpsTimer = null;
+  }
+  if (ws) {
+    const currentWs = ws;
+    ws = null;
+    currentWs.close();
+  }
+}
+
+async function submitLogin() {
+  const btn = document.getElementById('btnLogin');
+  const msg = document.getElementById('loginMessage');
+  const token = document.getElementById('loginToken').value.trim();
+  if (!token) {
+    msg.textContent = '请输入登录密钥';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '登录中...';
+  msg.textContent = '';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      toast('登录成功', 'success');
+      onLoginSuccess();
+    } else {
+      msg.textContent = data.message || '登录失败';
+    }
+  } catch(e) {
+    msg.textContent = '登录请求失败，请稍后重试。';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '登录';
+  }
+}
+
+async function logoutWebui() {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin'
+    });
+  } catch(e) {}
+  handleAuthExpired('已退出登录');
+}
+
+function handleAuthExpired(message) {
+  toast(message, 'error');
+  showLoginOverlay(message);
+}
+
+async function launchBrowser() {
+  const btn = document.getElementById('btnLaunch');
+  btn.disabled = true;
+  btn.textContent = '启动中...';
+  const r = await api('/api/browser/launch', 'POST');
+  btn.disabled = false;
+  btn.textContent = '启动浏览器';
+  if (r.success) { toast('浏览器已启动', 'success'); } else { toast(r.message, 'error'); }
+  refreshStatus();
+}
+
+async function shutdownBrowser() {
+  const r = await api('/api/browser/shutdown', 'POST');
+  if (r.success) {
+    toast('浏览器已关闭', 'info');
+    canvas.style.display = 'none';
+    document.getElementById('noBrowser').style.display = '';
+  }
+  refreshStatus();
+}
+
+async function navigateBrowser(url, logText) {
+  const r = await api('/api/browser/navigate', 'POST', { url });
+  if (r.success) {
+    addLog(logText + url);
+    refreshStatus();
+  } else {
+    toast(r.message || '导航失败', 'error');
+  }
+}
+
+async function navigateTo() {
+  const url = document.getElementById('urlBar').value.trim();
+  if (!url) return;
+  let fullUrl = url;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) fullUrl = 'https://' + url;
+  await navigateBrowser(fullUrl, '导航到: ');
+}
+
+async function refreshStatus() {
+  try {
+    const s = await api('/api/status');
+    const dot = document.getElementById('browserDot');
+    const st = document.getElementById('browserStatus');
+    if (s.browser_running) {
+      dot.className = 'dot on';
+      st.textContent = '运行中';
+    } else {
+      dot.className = 'dot off';
+      st.textContent = '未运行';
+    }
+    document.getElementById('currentUrlDisplay').textContent = s.current_url || '-';
+    document.getElementById('siteCountDisplay').textContent = s.site_count || s.forum_count || 0;
+    const urlBar = document.getElementById('urlBar');
+    if (s.current_url && document.activeElement !== urlBar) urlBar.value = s.current_url;
+  } catch(e) {}
+}
+
+// ==================== Site Management ====================
+async function refreshSites() {
+  sites = await api('/api/sites');
+  renderSites();
+  updateSaveTargetSelect();
+  updateVisionSaveTargetSelect();
+}
+
+function renderSites() {
+  const container = document.getElementById('siteList');
+  if (sites.length === 0) {
+    container.innerHTML = '<p style="color:var(--text2);font-size:13px;text-align:center;padding:20px">暂无站点，请添加</p>';
+    return;
+  }
+  container.innerHTML = sites.map(f => `
+    <div class="site-item">
+      <div class="si-header">
+        <span class="si-name">${esc(f.name)}</span>
+        <span class="si-badge ${f.enabled ? 'on' : 'off'}">${f.enabled ? '启用' : '禁用'}</span>
+      </div>
+      <div class="si-url">${esc(f.url)}</div>
+      <div class="si-status">
+        操作: <span class="si-badge ${f.has_actions ? 'ok' : 'none'}">${f.has_actions ? f.action_count + '步' : '未录制'}</span>
+        ${f.vision_region && f.vision_region.width ? '<span class="si-badge ok">识图</span>' : ''}
+        ${f.last_checkin ? `&nbsp; 上次: <span class="si-badge ${f.last_result === '成功' || f.last_result?.startsWith('成功') ? 'ok' : 'fail'}">${esc(f.last_result)}</span> <span style="font-size:11px;color:var(--text2)">${esc(f.last_checkin)}</span>` : ''}
+      </div>
+      <div class="si-actions">
+        <button class="btn btn-primary btn-sm" onclick="goToSite('${esc(f.url)}')">前往</button>
+        <button class="btn btn-success btn-sm" onclick="checkinOne('${esc(f.name)}')" ${!f.has_actions ? 'disabled title="请先录制操作"' : ''}>签到</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleSite('${esc(f.name)}')">${f.enabled ? '禁用' : '启用'}</button>
+        <button class="btn btn-danger btn-sm" onclick="removeSite('${esc(f.name)}')">删除</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateSaveTargetSelect() {
+  const sel = document.getElementById('saveTarget');
+  sel.innerHTML = '<option value="">-- 选择保存到站点 --</option>' +
+    sites.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+}
+
+async function addSite() {
+  const name = document.getElementById('siteName').value.trim();
+  const url = document.getElementById('siteUrl').value.trim();
+  if (!name || !url) { toast('请填写站点名称和URL', 'error'); return; }
+  const r = await api('/api/sites', 'POST', { name, url });
+  if (r.success) {
+    toast('站点已添加', 'success');
+    document.getElementById('siteName').value = '';
+    document.getElementById('siteUrl').value = '';
+    refreshSites();
+  } else { toast(r.message, 'error'); }
+}
+
+async function removeSite(name) {
+  if (!confirm(`确定删除站点"${name}"？`)) return;
+  await api(`/api/sites/${encodeURIComponent(name)}`, 'DELETE');
+  toast('已删除', 'info');
+  refreshSites();
+}
+
+async function toggleSite(name) {
+  await api(`/api/sites/${encodeURIComponent(name)}/toggle`, 'POST');
+  refreshSites();
+}
+
+async function goToSite(url) {
+  document.getElementById('urlBar').value = url;
+  await navigateBrowser(url, '导航到站点: ');
+}
+
+// ==================== Recording ====================
+async function toggleRecord() {
+  if (!isRecording) {
+    await api('/api/record/start', 'POST');
+    isRecording = true;
+    recordedActions = [];
+    document.getElementById('btnRecord').textContent = '停止录制';
+    document.getElementById('btnRecord').classList.add('btn-record');
+    document.getElementById('btnRecord').classList.remove('btn-danger');
+    document.getElementById('recordStatus').textContent = '录制中...';
+    document.getElementById('recordStatus').style.color = 'var(--danger)';
+    toast('开始录制 - 请在浏览器画面中操作', 'info');
+    addLog('开始录制签到操作');
+  } else {
+    const r = await api('/api/record/stop', 'POST');
+    isRecording = false;
+    recordedActions = r.actions || [];
+    document.getElementById('btnRecord').textContent = '开始录制';
+    document.getElementById('btnRecord').classList.remove('btn-record');
+    document.getElementById('btnRecord').classList.add('btn-danger');
+    document.getElementById('recordStatus').textContent = '已停止';
+    document.getElementById('recordStatus').style.color = '';
+    document.getElementById('recordCount').textContent = recordedActions.length;
+    document.getElementById('btnSaveRecord').disabled = recordedActions.length === 0;
+    renderActionList();
+    toast(`录制完成，共 ${recordedActions.length} 步`, 'success');
+    addLog(`录制完成: ${recordedActions.length} 步`);
+  }
+}
+
+function clearRecordActions() {
+  recordedActions = [];
+  editingActionIndex = -1;
+  document.getElementById('recordCount').textContent = '0';
+  document.getElementById('btnSaveRecord').disabled = true;
+  renderActionList();
+}
+
+function renderActionList() {
+  const container = document.getElementById('actionList');
+  document.getElementById('actionEditorCount').textContent =
+    recordedActions.length > 0 ? `(${recordedActions.length} 步)` : '';
+  document.getElementById('btnSaveRecord').disabled = recordedActions.length === 0;
+  document.getElementById('recordCount').textContent = recordedActions.length;
+
+  if (recordedActions.length === 0) {
+    container.innerHTML = '<p style="color:var(--text2);font-size:12px;padding:8px">暂无操作</p>' +
+      '<button class="action-add-btn" onclick="showAddActionModal(-1)">+ 添加操作步骤</button>';
+    return;
+  }
+  const typeNames = { click: '点击', type: '输入', press_key: '按键', navigate: '导航', scroll: '滚动', wait: '等待', drag: '拖动' };
+  let html = recordedActions.map((a, i) => {
+    let detail = getActionDetail(a);
+    const isEditing = editingActionIndex === i;
+    let editForm = '';
+    if (isEditing) {
+      editForm = buildEditForm(a, i);
+    }
+    return `<div class="action-editor-item" ${isEditing ? 'style="border-color:var(--accent2)"' : ''}>
+      <div class="ae-header">
+        <span class="ae-step">${i+1}.</span>
+        <span class="ae-type">${typeNames[a.type] || a.type}</span>
+        <span style="color:var(--text2);font-size:11px">+${a.delay}s</span>
+        <span class="ae-btns">
+          ${i > 0 ? `<button title="上移" onclick="moveAction(${i},-1)">&uarr;</button>` : ''}
+          ${i < recordedActions.length - 1 ? `<button title="下移" onclick="moveAction(${i},1)">&darr;</button>` : ''}
+          <button title="编辑" onclick="toggleEditAction(${i})">${isEditing ? '&times;' : '&#9998;'}</button>
+          <button title="删除" onclick="deleteAction(${i})" style="color:var(--danger)">&minus;</button>
+        </span>
+      </div>
+      <div class="ae-detail">${esc(detail)}</div>
+      ${editForm}
+    </div>`;
+  }).join('');
+  html += '<button class="action-add-btn" onclick="showAddActionModal(-1)">+ 添加操作步骤</button>';
+  container.innerHTML = html;
+}
+
+function getActionDetail(a) {
+  if (a.type === 'click') {
+    let d = `坐标 (${Math.round(a.x)}, ${Math.round(a.y)})`;
+    if (a.selector) d += `  选择器: ${a.selector.substring(0, 40)}`;
+    if (a.element_info?.text) d += `  "${a.element_info.text.substring(0, 30)}"`;
+    return d;
+  }
+  if (a.type === 'type') return `文本: "${a.text}"`;
+  if (a.type === 'press_key') return `按键: ${a.key}`;
+  if (a.type === 'navigate') return `URL: ${a.url}`;
+  if (a.type === 'drag') {
+    const toX = a.element_info?.toX ?? a.toX ?? 0;
+    const toY = a.element_info?.toY ?? a.toY ?? 0;
+    return `从 (${Math.round(a.x)}, ${Math.round(a.y)}) 拖到 (${Math.round(toX)}, ${Math.round(toY)})`;
+  }
+  if (a.type === 'scroll') return `滚动量: ${a.delta_y}`;
+  if (a.type === 'wait') return `等待: ${a.delay}s`;
+  return '';
+}
+
+let editingActionIndex = -1;
+
+function toggleEditAction(i) {
+  editingActionIndex = editingActionIndex === i ? -1 : i;
+  renderActionList();
+}
+
+function buildEditForm(a, i) {
+  let fields = '';
+  if (a.type === 'click') {
+    fields = `
+      <div class="ae-row">
+        <label>X:</label><input type="number" id="aeX_${i}" value="${a.x}" step="1">
+        <label>Y:</label><input type="number" id="aeY_${i}" value="${a.y}" step="1">
+      </div>
+      <label>选择器 (可选):</label>
+      <input type="text" id="aeSel_${i}" value="${esc(a.selector || '')}" placeholder="CSS 选择器">`;
+  } else if (a.type === 'type') {
+    fields = `<label>文本:</label><input type="text" id="aeText_${i}" value="${esc(a.text || '')}">`;
+  } else if (a.type === 'press_key') {
+    fields = `<label>按键:</label><input type="text" id="aeKey_${i}" value="${esc(a.key || '')}" placeholder="Enter / Backspace / Tab...">`;
+  } else if (a.type === 'navigate') {
+    fields = `<label>URL:</label><input type="text" id="aeUrl_${i}" value="${esc(a.url || '')}">`;
+  } else if (a.type === 'scroll') {
+    fields = `<label>滚动量 (正数=向下):</label><input type="number" id="aeDY_${i}" value="${a.delta_y}" step="50">`;
+  } else if (a.type === 'drag') {
+    const toX = a.element_info?.toX ?? a.toX ?? 0;
+    const toY = a.element_info?.toY ?? a.toY ?? 0;
+    fields = `
+      <div class="ae-row">
+        <label>起点X:</label><input type="number" id="aeX_${i}" value="${a.x}" step="1">
+        <label>起点Y:</label><input type="number" id="aeY_${i}" value="${a.y}" step="1">
+      </div>
+      <div class="ae-row">
+        <label>终点X:</label><input type="number" id="aeToX_${i}" value="${toX}" step="1">
+        <label>终点Y:</label><input type="number" id="aeToY_${i}" value="${toY}" step="1">
+      </div>`;
+  } else if (a.type === 'wait') {
+    // delay field covers this
+  }
+  return `<div class="ae-edit-form">
+    ${fields}
+    <div class="ae-row">
+      <label>间隔(秒):</label><input type="number" id="aeDelay_${i}" value="${a.delay}" step="0.1" min="0" style="width:80px">
+      <button class="btn btn-primary btn-sm" onclick="applyEditAction(${i})">确定</button>
+    </div>
+  </div>`;
+}
+
+function applyEditAction(i) {
+  const a = recordedActions[i];
+  if (a.type === 'click') {
+    a.x = parseFloat(document.getElementById(`aeX_${i}`).value) || 0;
+    a.y = parseFloat(document.getElementById(`aeY_${i}`).value) || 0;
+    a.selector = document.getElementById(`aeSel_${i}`).value.trim();
+  } else if (a.type === 'type') {
+    a.text = document.getElementById(`aeText_${i}`).value;
+  } else if (a.type === 'press_key') {
+    a.key = document.getElementById(`aeKey_${i}`).value.trim();
+  } else if (a.type === 'navigate') {
+    a.url = document.getElementById(`aeUrl_${i}`).value.trim();
+  } else if (a.type === 'scroll') {
+    a.delta_y = parseFloat(document.getElementById(`aeDY_${i}`).value) || 0;
+  } else if (a.type === 'drag') {
+    a.x = parseFloat(document.getElementById(`aeX_${i}`).value) || 0;
+    a.y = parseFloat(document.getElementById(`aeY_${i}`).value) || 0;
+    if (!a.element_info) a.element_info = {};
+    a.element_info.toX = parseFloat(document.getElementById(`aeToX_${i}`).value) || 0;
+    a.element_info.toY = parseFloat(document.getElementById(`aeToY_${i}`).value) || 0;
+  }
+  a.delay = parseFloat(document.getElementById(`aeDelay_${i}`).value) || 0;
+  editingActionIndex = -1;
+  renderActionList();
+  toast('操作已更新', 'success');
+}
+
+function deleteAction(i) {
+  recordedActions.splice(i, 1);
+  if (editingActionIndex === i) editingActionIndex = -1;
+  else if (editingActionIndex > i) editingActionIndex--;
+  renderActionList();
+}
+
+function moveAction(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= recordedActions.length) return;
+  [recordedActions[i], recordedActions[j]] = [recordedActions[j], recordedActions[i]];
+  if (editingActionIndex === i) editingActionIndex = j;
+  else if (editingActionIndex === j) editingActionIndex = i;
+  renderActionList();
+}
+
+// ==================== Add Action Modal ====================
+let addActionInsertIndex = -1; // -1 means append
+
+function showAddActionModal(afterIndex) {
+  addActionInsertIndex = afterIndex;
+  document.getElementById('addActionModal').classList.add('active');
+  document.getElementById('addActionType').value = 'click';
+  document.getElementById('addActionDelay').value = '1';
+  onAddActionTypeChange();
+}
+
+function hideAddActionModal() {
+  document.getElementById('addActionModal').classList.remove('active');
+}
+
+function onAddActionTypeChange() {
+  const type = document.getElementById('addActionType').value;
+  const container = document.getElementById('addActionFields');
+  let html = '';
+  if (type === 'click') {
+    html = `<div style="display:flex;gap:8px">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">X</label><input type="number" id="newActionX" value="0" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Y</label><input type="number" id="newActionY" value="0" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"></div>
+    </div>
+    <div style="margin-top:8px"><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">选择器 (可选)</label><input type="text" id="newActionSel" placeholder="CSS 选择器" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"></div>`;
+  } else if (type === 'type') {
+    html = `<label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">输入文本</label><input type="text" id="newActionText" placeholder="要输入的文本" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">`;
+  } else if (type === 'press_key') {
+    html = `<label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">按键名称</label><input type="text" id="newActionKey" placeholder="Enter / Backspace / Tab..." style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">`;
+  } else if (type === 'navigate') {
+    html = `<label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">URL</label><input type="text" id="newActionUrl" placeholder="https://..." style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">`;
+  } else if (type === 'scroll') {
+    html = `<label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">滚动量 (正数=向下)</label><input type="number" id="newActionDY" value="300" step="50" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">`;
+  } else if (type === 'drag') {
+    html = `<div style="display:flex;gap:8px">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">起点 X</label><input type="number" id="newActionX" value="0" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">起点 Y</label><input type="number" id="newActionY" value="0" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">终点 X</label><input type="number" id="newActionToX" value="100" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">终点 Y</label><input type="number" id="newActionToY" value="100" style="width:100%;padding:6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px"></div>
+    </div>`;
+  } else if (type === 'wait') {
+    // Only delay field needed, already in the modal
+  }
+  container.innerHTML = html;
+}
+
+function confirmAddAction() {
+  const type = document.getElementById('addActionType').value;
+  const delay = parseFloat(document.getElementById('addActionDelay').value) || 1;
+  const action = { type, delay, timestamp: 0, x: 0, y: 0, text: '', selector: '', url: '', key: '', delta_y: 0, element_info: {} };
+
+  if (type === 'click') {
+    action.x = parseFloat(document.getElementById('newActionX').value) || 0;
+    action.y = parseFloat(document.getElementById('newActionY').value) || 0;
+    action.selector = (document.getElementById('newActionSel').value || '').trim();
+  } else if (type === 'type') {
+    action.text = document.getElementById('newActionText').value || '';
+    if (!action.text) { toast('请输入文本', 'error'); return; }
+  } else if (type === 'press_key') {
+    action.key = (document.getElementById('newActionKey').value || '').trim();
+    if (!action.key) { toast('请输入按键名', 'error'); return; }
+  } else if (type === 'navigate') {
+    action.url = (document.getElementById('newActionUrl').value || '').trim();
+    if (!action.url) { toast('请输入 URL', 'error'); return; }
+  } else if (type === 'scroll') {
+    action.delta_y = parseFloat(document.getElementById('newActionDY').value) || 0;
+  } else if (type === 'drag') {
+    action.x = parseFloat(document.getElementById('newActionX').value) || 0;
+    action.y = parseFloat(document.getElementById('newActionY').value) || 0;
+    action.element_info = {
+      toX: parseFloat(document.getElementById('newActionToX').value) || 0,
+      toY: parseFloat(document.getElementById('newActionToY').value) || 0,
+    };
+  }
+
+  if (addActionInsertIndex >= 0 && addActionInsertIndex < recordedActions.length) {
+    recordedActions.splice(addActionInsertIndex + 1, 0, action);
+  } else {
+    recordedActions.push(action);
+  }
+
+  hideAddActionModal();
+  renderActionList();
+  toast('操作已添加', 'success');
+}
+
+// ==================== Load Actions from Site ====================
+async function loadActionsFromSite() {
+  const target = document.getElementById('saveTarget').value;
+  if (!target) { toast('请先选择站点', 'error'); return; }
+  try {
+    const r = await api(`/api/sites/${encodeURIComponent(target)}/actions`);
+    if (r.actions && r.actions.length > 0) {
+      recordedActions = r.actions;
+      editingActionIndex = -1;
+      renderActionList();
+      toast(`已加载 ${r.actions.length} 步操作`, 'success');
+      addLog(`从 ${target} 加载了 ${r.actions.length} 步操作`);
+    } else {
+      toast('该站点暂无录制操作', 'info');
+    }
+  } catch(e) { toast('加载失败', 'error'); }
+}
+
+async function saveRecordToSite() {
+  const target = document.getElementById('saveTarget').value;
+  if (!target) { toast('请选择目标站点', 'error'); return; }
+  if (recordedActions.length === 0) { toast('没有可保存的操作', 'error'); return; }
+  const r = await api(`/api/sites/${encodeURIComponent(target)}/actions`, 'POST', { actions: recordedActions });
+  if (r.success) {
+    toast(`已保存 ${r.count} 步操作到"${target}"`, 'success');
+    addLog(`保存 ${r.count} 步操作到: ${target}`);
+    refreshSites();
+  } else { toast('保存失败', 'error'); }
+}
+
+// ==================== Check-in ====================
+async function checkinOne(name) {
+  toast(`正在签到: ${name}...`, 'info');
+  addLog(`开始签到: ${name}`);
+  const r = await api(`/api/checkin/${encodeURIComponent(name)}`, 'POST');
+  if (r.success) {
+    toast(`${name} 签到成功!`, 'success');
+    if (r.vision_image) {
+      addLogWithImage(`${name} 签到成功 | 识图结果: ${r.vision_text || '(无内容)'}`, r.vision_image);
+    } else {
+      addLog(`${name} 签到成功`);
+    }
+  } else {
+    toast(`${name} 签到失败: ${r.result}`, 'error');
+    if (r.vision_image) {
+      addLogWithImage(`${name} 签到失败: ${r.result} | 识图结果: ${r.vision_text || '(无内容)'}`, r.vision_image);
+    } else {
+      addLog(`${name} 签到失败: ${r.result}`);
+    }
+  }
+  refreshSites();
+}
+
+async function checkinAll() {
+  toast('正在执行全部签到...', 'info');
+  addLog('开始全部签到');
+  const r = await api('/api/checkin', 'POST');
+  if (r.message) { toast(r.message, 'error'); addLog(r.message); return; }
+  const sCount = (r.success || []).length;
+  const fCount = (r.failed || []).length;
+  if (fCount === 0) {
+    toast(`全部签到完成! 成功: ${sCount}`, 'success');
+  } else {
+    const failNames = r.failed.map(f => f.name).join(', ');
+    toast(`签到完成 成功:${sCount} 失败:${fCount} (${failNames})`, 'error');
+  }
+  addLog(`全部签到完成: 成功${sCount} 失败${fCount}`);
+  // 显示每个站点的识图截图
+  const vi = r.vision_images || {};
+  for (const [fname, vdata] of Object.entries(vi)) {
+    if (vdata.image) {
+      const matchInfo = vdata.matched ? `匹配: ${vdata.matched}` : '未匹配';
+      addLogWithImage(`[${fname}] 识图验证 (${matchInfo})`, vdata.image);
+    }
+  }
+  refreshSites();
+}
+
+// ==================== Helpers ====================
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+function toast(msg, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+function addLog(msg) {
+  const now = new Date().toLocaleTimeString();
+  logs.unshift({text: `[${now}] ${msg}`});
+  if (logs.length > 100) logs.pop();
+  renderLogs();
+}
+
+function addLogWithImage(msg, imageB64) {
+  const now = new Date().toLocaleTimeString();
+  logs.unshift({text: `[${now}] ${msg}`, image: imageB64});
+  if (logs.length > 100) logs.pop();
+  renderLogs();
+}
+
+function renderLogs() {
+  const container = document.getElementById('logList');
+  container.innerHTML = logs.map(l => {
+    let html = `<p style="padding:4px 0;border-bottom:1px solid var(--border)">${esc(l.text)}</p>`;
+    if (l.image) {
+      html += `<img src="data:image/jpeg;base64,${l.image}" style="max-width:100%;max-height:150px;border-radius:4px;margin:4px 0 8px;border:1px solid var(--border)">`;
+    }
+    return html;
+  }).join('');
+}
+
+function updateFps() {
+  const now = Date.now();
+  const elapsed = (now - lastFpsTime) / 1000;
+  const fps = Math.round(frameCount / elapsed);
+  document.getElementById('fpsDisplay').textContent = fps;
+  frameCount = 0;
+  lastFpsTime = now;
+}
+
+// ==================== Send Text Modal ====================
+function showSendTextModal() {
+  document.getElementById('sendTextModal').classList.add('active');
+  document.getElementById('sendTextArea').value = '';
+  document.getElementById('sendTextArea').focus();
+}
+
+function hideSendTextModal() {
+  document.getElementById('sendTextModal').classList.remove('active');
+}
+
+function doSendText() {
+  const text = document.getElementById('sendTextArea').value;
+  if (!text) { toast('请输入文本', 'error'); return; }
+  sendWS({ action: 'type', text: text });
+  addLog('发送文本: ' + text.substring(0, 50) + (text.length > 50 ? '...' : ''));
+  toast('文本已发送', 'success');
+  hideSendTextModal();
+}
+
+// ==================== Vision Selection ====================
+let visionSelectMode = false;
+let visionRegion = null; // {x, y, width, height} in browser coordinates
+let visionDragStart = null;
+
+// 初始化时检查识图功能是否开启
+async function initVision() {
+  try {
+    const cfg = await api('/api/vision/config');
+    if (cfg.enabled) {
+      document.getElementById('tabVision').style.display = '';
+    }
+  } catch(e) {}
+}
+
+function toggleVisionSelect() {
+  visionSelectMode = !visionSelectMode;
+  const btn = document.getElementById('btnVisionSelect');
+  const canvasEl = document.getElementById('browserCanvas');
+  if (visionSelectMode) {
+    btn.textContent = '取消选区';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-record');
+    canvasEl.style.cursor = 'crosshair';
+    toast('请在浏览器画面中拖拽选择区域', 'info');
+  } else {
+    btn.textContent = '开始选区';
+    btn.classList.add('btn-primary');
+    btn.classList.remove('btn-record');
+    canvasEl.style.cursor = 'default';
+  }
+}
+
+function clearVisionRegion() {
+  visionRegion = null;
+  document.getElementById('visionRegionText').textContent = '未设置';
+  document.getElementById('visionOverlay').style.display = 'none';
+}
+
+function updateVisionOverlay() {
+  if (!visionRegion) return;
+  const canvasEl = document.getElementById('browserCanvas');
+  const overlay = document.getElementById('visionOverlay');
+  const rect = canvasEl.getBoundingClientRect();
+  const scaleX = rect.width / canvasEl.width;
+  const scaleY = rect.height / canvasEl.height;
+
+  // Convert browser coords to display coords relative to canvas-wrap
+  const canvasWrap = document.getElementById('canvasWrap');
+  const wrapRect = canvasWrap.getBoundingClientRect();
+  const canvasOffsetX = rect.left - wrapRect.left;
+  const canvasOffsetY = rect.top - wrapRect.top;
+
+  overlay.style.display = 'block';
+  overlay.style.left = (canvasOffsetX + visionRegion.x * scaleX) + 'px';
+  overlay.style.top = (canvasOffsetY + visionRegion.y * scaleY) + 'px';
+  overlay.style.width = (visionRegion.width * scaleX) + 'px';
+  overlay.style.height = (visionRegion.height * scaleY) + 'px';
+}
+
+// Attach vision selection events to canvas
+function setupVisionEvents() {
+  const canvasEl = document.getElementById('browserCanvas');
+
+  canvasEl.addEventListener('mousedown', (e) => {
+    if (!visionSelectMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = canvasEl.getBoundingClientRect();
+    const scaleX = canvasEl.width / rect.width;
+    const scaleY = canvasEl.height / rect.height;
+    visionDragStart = {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  }, true);
+
+  canvasEl.addEventListener('mousemove', (e) => {
+    if (!visionSelectMode || !visionDragStart) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = canvasEl.getBoundingClientRect();
+    const scaleX = canvasEl.width / rect.width;
+    const scaleY = canvasEl.height / rect.height;
+    const curX = (e.clientX - rect.left) * scaleX;
+    const curY = (e.clientY - rect.top) * scaleY;
+
+    visionRegion = {
+      x: Math.min(visionDragStart.x, curX),
+      y: Math.min(visionDragStart.y, curY),
+      width: Math.abs(curX - visionDragStart.x),
+      height: Math.abs(curY - visionDragStart.y),
+    };
+    updateVisionOverlay();
+  }, true);
+
+  canvasEl.addEventListener('mouseup', (e) => {
+    if (!visionSelectMode || !visionDragStart) return;
+    e.preventDefault();
+    e.stopPropagation();
+    visionDragStart = null;
+
+    if (visionRegion && visionRegion.width > 5 && visionRegion.height > 5) {
+      // Round coordinates
+      visionRegion.x = Math.round(visionRegion.x);
+      visionRegion.y = Math.round(visionRegion.y);
+      visionRegion.width = Math.round(visionRegion.width);
+      visionRegion.height = Math.round(visionRegion.height);
+      document.getElementById('visionRegionText').textContent =
+        `(${visionRegion.x}, ${visionRegion.y}) ${visionRegion.width}x${visionRegion.height}`;
+      toast('选区已设置', 'success');
+      // Auto exit selection mode
+      toggleVisionSelect();
+    } else {
+      visionRegion = null;
+    }
+  }, true);
+}
+
+// Block normal canvas click events during vision selection
+const origSetupCanvasEvents = setupCanvasEvents;
+setupCanvasEvents = function() {
+  origSetupCanvasEvents();
+  setupVisionEvents();
+
+  // Patch mousedown to ignore during vision selection (prevents drag/click)
+  const canvasEl = document.getElementById('browserCanvas');
+  canvasEl.addEventListener('mousedown', (e) => {
+    if (visionSelectMode) { e.stopImmediatePropagation(); }
+  }, true);
+};
+
+async function testVision() {
+  if (!visionRegion) { toast('请先选择识图区域', 'error'); return; }
+  const keywords = document.getElementById('visionKeywords').value.trim();
+  toast('正在识图分析，请稍候...', 'info');
+  addLog('开始测试识图...');
+
+  const r = await api('/api/vision/test', 'POST', {
+    region: visionRegion,
+    keywords: keywords,
+  });
+
+  const resultDiv = document.getElementById('visionTestResult');
+  resultDiv.style.display = 'block';
+
+  // 显示发送给大模型的截图
+  const imgContainer = document.getElementById('visionTestImage');
+  if (r.image_b64) {
+    imgContainer.innerHTML = `<img src="data:image/jpeg;base64,${r.image_b64}" style="max-width:100%;border-radius:var(--radius);border:1px solid var(--border);margin-top:4px">`;
+    addLogWithImage('识图截图已发送给大模型', r.image_b64);
+  } else {
+    imgContainer.innerHTML = '';
+  }
+
+  if (r.error && !r.llm_text) {
+    document.getElementById('visionMatchStatus').innerHTML =
+      '<span style="color:var(--danger)">失败</span>';
+    document.getElementById('visionMatchText').textContent = r.error;
+    document.getElementById('visionLlmText').textContent = '';
+    toast('识图失败: ' + r.error, 'error');
+  } else {
+    const matched = r.success;
+    document.getElementById('visionMatchStatus').innerHTML = matched
+      ? '<span style="color:var(--success)">匹配成功</span>'
+      : '<span style="color:var(--danger)">未匹配</span>';
+    document.getElementById('visionMatchText').textContent = r.matched || '(无匹配)';
+    document.getElementById('visionLlmText').textContent = r.llm_text || '(无内容)';
+    toast(matched ? '识图匹配成功!' : '识图未匹配关键词', matched ? 'success' : 'error');
+    addLog('识图测试: ' + (matched ? '匹配成功: ' + r.matched : '未匹配'));
+  }
+}
+
+async function saveVisionToSite() {
+  const target = document.getElementById('visionSaveTarget').value;
+  if (!target) { toast('请选择目标站点', 'error'); return; }
+  if (!visionRegion) { toast('请先设置识图选区', 'error'); return; }
+  const keywords = document.getElementById('visionKeywords').value.trim();
+
+  const r = await api(`/api/sites/${encodeURIComponent(target)}/vision`, 'POST', {
+    region: visionRegion,
+    keywords: keywords,
+  });
+  if (r.success) {
+    toast(`已保存识图配置到"${target}"`, 'success');
+    addLog(`保存识图选区到: ${target}`);
+    refreshSites();
+  } else { toast(r.message || '保存失败', 'error'); }
+}
+
+// Update vision save target select when sites change
+function updateVisionSaveTargetSelect() {
+  const sel = document.getElementById('visionSaveTarget');
+  sel.innerHTML = '<option value="">-- 选择保存到站点 --</option>' +
+    sites.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+}
+
+// Load a site's vision config into the panel
+function loadSiteVision(name) {
+  const site = sites.find(f => f.name === name);
+  if (!site) return;
+  if (site.vision_region && site.vision_region.width) {
+    visionRegion = site.vision_region;
+    document.getElementById('visionRegionText').textContent =
+      `(${visionRegion.x}, ${visionRegion.y}) ${visionRegion.width}x${visionRegion.height}`;
+    updateVisionOverlay();
+  }
+  if (site.vision_keywords) {
+    document.getElementById('visionKeywords').value = site.vision_keywords;
+  }
+}
+</script>
+</body>
+</html>
