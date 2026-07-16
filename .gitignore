@@ -10,3 +10,4 @@ build/
 .venv/
 plugin_guides/
 .claude/
+.tmp_browser_test/

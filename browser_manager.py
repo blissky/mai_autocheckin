@@ -31,6 +31,7 @@ class BrowserManager:
         self._cm = None  # AsyncCamoufox 上下文管理器
         self._lock = asyncio.Lock()
         self._last_activity = 0.0  # 最后活动时间戳
+        self._last_screenshot_error_log = 0.0
 
     @property
     def page(self):
@@ -166,7 +167,11 @@ class BrowserManager:
         try:
             return await self._page.screenshot(
                 type="jpeg", quality=quality, scale="css")
-        except Exception:
+        except Exception as e:
+            now = time.monotonic()
+            if now - self._last_screenshot_error_log >= 10:
+                logger.warning(f"浏览器截图失败: {e}")
+                self._last_screenshot_error_log = now
             return b""
 
     async def click(self, x: float, y: float):

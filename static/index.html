@@ -497,15 +497,17 @@ function connectWebSocket() {
   ws.onopen = () => {
     addLog('WebSocket 已连接');
   };
-  ws.onclose = async () => {
+  ws.onclose = async (event) => {
     if (!isAuthenticated) return;
-    addLog('WebSocket 断开，3秒后重连...');
+    addLog(`WebSocket 断开（${event.code}），3秒后重连...`);
     setTimeout(async () => {
       const authenticated = await checkAuthStatus();
       if (authenticated && isAuthenticated) connectWebSocket();
     }, 3000);
   };
-  ws.onerror = () => {};
+  ws.onerror = () => {
+    addLog('WebSocket 连接错误，请检查反向代理是否支持 WebSocket');
+  };
 
   ws.onmessage = (e) => {
     if (e.data instanceof Blob) {

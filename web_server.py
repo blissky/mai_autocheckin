@@ -372,13 +372,22 @@ class WebServer:
         if origin:
             from urllib.parse import urlparse
             origin_host = urlparse(origin).netloc
-            if origin_host != request.headers.get("Host", ""):
+            request_host = request.headers.get("Host", "")
+            forwarded_host = (
+                request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
+                if self.trust_proxy else ""
+            )
+            if origin_host not in {request_host, forwarded_host}:
+                logger.warning(
+                    f"拒绝 WebSocket 连接：Origin {origin_host} 与 Host "
+                    f"{request_host} 不一致")
                 return web.Response(status=403, text="Origin 校验失败")
 
         session_id = request["auth_session_id"]
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         self._ws_clients[ws] = session_id
+        logger.info("WebSocket 浏览器画面连接已建立")
 
         # 确保截图推送任务在运行
         if self._screenshot_task is None or self._screenshot_task.done():
@@ -400,6 +409,7 @@ class WebServer:
                     logger.warning(f"WebSocket 错误: {ws.exception()}")
         finally:
             self._ws_clients.pop(ws, None)
+            logger.info("WebSocket 浏览器画面连接已断开")
 
         return ws
 
