@@ -138,29 +138,32 @@ class WebUISectionConfig(PluginConfigBase):
     __ui_icon__ = "language"
     __ui_order__ = 0
 
-    port: int = Field(default=9010, title="端口", description="WebUI 控制面板端口")
+    port: int = Field(
+        default=9010, description="WebUI 控制面板端口",
+        json_schema_extra={"title": "端口"},
+    )
     host: str = Field(
         default="127.0.0.1",
-        title="监听地址",
         description="127.0.0.1 仅限本机访问，0.0.0.0 允许外部访问",
+        json_schema_extra={"title": "监听地址"},
     )
     token: str = Field(
         default="sk-change-me",
-        title="登录密钥",
         description="访问 WebUI 时需要输入，请务必修改默认值",
+        json_schema_extra={"title": "登录密钥"},
     )
     session_timeout: int = Field(
-        default=30, title="登录空闲超时（分钟）",
-        description="超时未操作后需要重新登录 WebUI",
+        default=30, description="超时未操作后需要重新登录 WebUI",
+        json_schema_extra={"title": "登录空闲超时（分钟）"},
     )
     trust_proxy: bool = Field(
         default=False,
-        title="信任反向代理",
         description="信任 X-Forwarded-For 请求头识别客户端 IP，仅在经反向代理访问时开启",
+        json_schema_extra={"title": "信任反向代理"},
     )
     screenshot_interval: int = Field(
-        default=500, title="画面刷新间隔（毫秒）",
-        description="WebUI 中浏览器画面的截图刷新间隔",
+        default=500, description="WebUI 中浏览器画面的截图刷新间隔",
+        json_schema_extra={"title": "画面刷新间隔（毫秒）"},
     )
 
 
@@ -173,12 +176,12 @@ class ScheduleSectionConfig(PluginConfigBase):
 
     cron_rules: str = Field(
         default="30 8 * * *",
-        title="签到计划",
         description="每行一条 5 字段 Cron 表达式（分 时 日 月 周），# 开头为注释",
+        json_schema_extra={"title": "签到计划"},
     )
     timezone: str = Field(
-        default="Asia/Shanghai", title="时区",
-        description="定时签到使用的时区",
+        default="Asia/Shanghai", description="定时签到使用的时区",
+        json_schema_extra={"title": "时区"},
     )
 
 
@@ -190,26 +193,40 @@ class BrowserSectionConfig(PluginConfigBase):
     __ui_order__ = 2
 
     headless: bool = Field(
-        default=True, title="无头模式",
-        description="不显示浏览器窗口运行，服务器环境请保持开启",
+        default=True, description="不显示浏览器窗口运行，服务器环境请保持开启",
+        json_schema_extra={"title": "无头模式"},
     )
     page_load_timeout: int = Field(
-        default=30, title="页面加载超时（秒）",
-        description="站点页面加载的最长等待时间",
+        default=30, description="站点页面加载的最长等待时间",
+        json_schema_extra={"title": "页面加载超时（秒）"},
     )
     action_delay: int = Field(
-        default=1000, title="操作间隔（毫秒）",
-        description="回放录制操作之间的最小间隔",
+        default=1000, description="回放录制操作之间的最小间隔",
+        json_schema_extra={"title": "操作间隔（毫秒）"},
     )
     checkin_wait: int = Field(
         default=5,
-        title="签到前等待（秒）",
         description="站点导航完成后、识图预检与动作回放前的等待时间",
+        json_schema_extra={"title": "签到前等待（秒）"},
     )
     idle_timeout: int = Field(
         default=10,
-        title="空闲自动关闭（分钟）",
         description="浏览器空闲超过该时长后自动关闭，0 表示禁用",
+        json_schema_extra={"title": "空闲自动关闭（分钟）"},
+    )
+
+
+class PluginSectionConfig(PluginConfigBase):
+    """插件元信息（宿主硬性要求 [plugin] 节与 config_version 字段）"""
+
+    __ui_label__ = "插件"
+    __ui_icon__ = "package"
+    __ui_order__ = 3
+
+    config_version: str = Field(
+        default="1.0.0",
+        description="配置版本号（宿主要求的字段，勿手动修改）",
+        json_schema_extra={"title": "配置版本"},
     )
 
 
@@ -219,6 +236,7 @@ class AutoCheckinConfig(PluginConfigBase):
     webui: WebUISectionConfig = Field(default_factory=WebUISectionConfig)
     schedule: ScheduleSectionConfig = Field(default_factory=ScheduleSectionConfig)
     browser: BrowserSectionConfig = Field(default_factory=BrowserSectionConfig)
+    plugin: PluginSectionConfig = Field(default_factory=PluginSectionConfig)
 
 
 # ==================== 插件主体 ====================

@@ -34,7 +34,9 @@
     }
   ],
   "capabilities": [
-    "send_message"
+    "send_message",
+    "llm.generate",
+    "llm.get_available_models"
   ],
   "i18n": {
     "default_locale": "zh-CN"

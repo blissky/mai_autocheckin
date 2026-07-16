@@ -130,6 +130,8 @@ apt-get install libgtk-3-0 libx11-xcb1 libasound2 libxtst6
 
 配置文件为插件目录下的 `config.toml`，也可在 MaiBot WebUI 的插件配置页中修改，保存后自动生效（插件会重启 WebUI 与定时任务）。
 
+> `[plugin]` 节仅含宿主要求的 `config_version` 版本号字段（宿主校验 config.toml 时的硬性要求），勿手动修改。
+
 ### `[webui]`
 
 | 配置 | 类型 | 默认值 | 说明 |
