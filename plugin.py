@@ -13,6 +13,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -300,10 +301,11 @@ class AutoCheckinPlugin(MaiBotPlugin):
         # 检测宿主是否配置 vlm（视觉）任务，决定是否启用识图验证
         await self._detect_vision_support()
 
-        # 确保 Python 包、系统依赖和 Camoufox 浏览器二进制已就绪
-        self._ensure_python_deps()
-        self._ensure_system_deps()
-        await self._ensure_camoufox_binary()
+        # 确保 Python 包、系统依赖和 Camoufox 浏览器二进制已就绪。
+        # 安装与下载均为阻塞操作，放入工作线程避免阻塞 Runner 心跳和配置 RPC。
+        await asyncio.to_thread(self._ensure_python_deps)
+        await asyncio.to_thread(self._ensure_system_deps)
+        await asyncio.to_thread(self._ensure_camoufox_binary)
 
         # 核心组件
         self.browser_manager = BrowserManager(
@@ -422,6 +424,51 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
     # ==================== 系统依赖 ====================
 
+    @staticmethod
+    def _run_install_command(command: list[str], label: str, timeout: int) -> None:
+        """执行安装命令并将输出实时转发到插件日志"""
+        logger.info(f"{label}开始: {' '.join(command)}")
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+            bufsize=1,
+        )
+
+        timed_out = threading.Event()
+
+        def kill_on_timeout() -> None:
+            if process.poll() is None:
+                timed_out.set()
+                process.kill()
+
+        timer = threading.Timer(timeout, kill_on_timeout)
+        timer.start()
+        try:
+            if process.stdout:
+                buffer = ""
+                while chunk := process.stdout.read(1):
+                    if chunk in {"\n", "\r"}:
+                        message = buffer.strip()
+                        if message:
+                            logger.info(f"[{label}] {message}")
+                        buffer = ""
+                    else:
+                        buffer += chunk
+                message = buffer.strip()
+                if message:
+                    logger.info(f"[{label}] {message}")
+            return_code = process.wait()
+        finally:
+            timer.cancel()
+
+        if timed_out.is_set():
+            raise subprocess.TimeoutExpired(command, timeout)
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, command)
+
     def _ensure_python_deps(self):
         """检查并自动安装插件 requirements.txt 中的 Python 依赖"""
         if importlib.util.find_spec("camoufox") is not None:
@@ -434,11 +481,17 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
         logger.info("检测到缺少 Python 依赖 camoufox，正在自动安装 requirements.txt...")
         try:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-r", str(requirements_path)],
-                check=True,
-                capture_output=True,
-                text=True,
+            self._run_install_command(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--progress-bar=on",
+                    "-r",
+                    str(requirements_path),
+                ],
+                "Python 依赖安装",
                 timeout=600,
             )
             importlib.invalidate_caches()
@@ -517,12 +570,15 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
         try:
             if update_cmd:
-                subprocess.run(
-                    update_cmd, check=True, capture_output=True, timeout=120,
+                self._run_install_command(
+                    update_cmd,
+                    f"{pm_name} 软件源更新",
+                    timeout=120,
                 )
-            subprocess.run(
+            self._run_install_command(
                 install_cmd + packages,
-                check=True, capture_output=True, timeout=300,
+                f"{pm_name} 系统依赖安装",
+                timeout=300,
             )
             logger.info("系统依赖安装完成")
         except subprocess.CalledProcessError:
@@ -596,8 +652,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
             return {
                 "name": "apt-get",
                 "packages": apt_packages,
-                "update_cmd": ["apt-get", "update", "-qq"],
-                "install_cmd": ["apt-get", "install", "-y", "-qq"],
+                "update_cmd": ["apt-get", "update"],
+                "install_cmd": ["apt-get", "install", "-y"],
             }
         elif ids & dnf_distros:
             return {
@@ -633,7 +689,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
     # ==================== Camoufox 初始化 ====================
 
-    async def _ensure_camoufox_binary(self):
+    def _ensure_camoufox_binary(self):
         """检查并自动下载 Camoufox 浏览器二进制"""
         try:
             from camoufox.pkgman import launch_path
@@ -646,10 +702,11 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
         logger.info("正在自动下载 Camoufox 浏览器二进制，首次运行需要等待...")
         try:
-            from camoufox.pkgman import CamoufoxFetcher
-            fetcher = CamoufoxFetcher()
-            fetcher.fetch_latest()
-            fetcher.install()
+            self._run_install_command(
+                [sys.executable, "-m", "camoufox", "fetch"],
+                "Camoufox 浏览器下载",
+                timeout=600,
+            )
             logger.info("Camoufox 浏览器二进制下载完成")
         except Exception as e:
             logger.error(f"自动下载 Camoufox 浏览器失败: {e}，请手动执行: python -m camoufox fetch")
