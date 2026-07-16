@@ -144,8 +144,8 @@ class WebUISectionConfig(PluginConfigBase):
         json_schema_extra={"title": "端口"},
     )
     host: str = Field(
-        default="127.0.0.1",
-        description="127.0.0.1 仅限本机访问，0.0.0.0 允许外部访问",
+        default="0.0.0.0",
+        description="WebUI 监听地址，默认允许容器外部访问",
         json_schema_extra={"title": "监听地址"},
     )
     token: str = Field(
@@ -156,11 +156,6 @@ class WebUISectionConfig(PluginConfigBase):
     session_timeout: int = Field(
         default=30, description="超时未操作后需要重新登录 WebUI",
         json_schema_extra={"title": "登录空闲超时（分钟）"},
-    )
-    trust_proxy: bool = Field(
-        default=False,
-        description="信任 X-Forwarded-For 请求头识别客户端 IP，仅在经反向代理访问时开启",
-        json_schema_extra={"title": "信任反向代理"},
     )
     screenshot_interval: int = Field(
         default=500, description="WebUI 中浏览器画面的截图刷新间隔",
@@ -325,7 +320,6 @@ class AutoCheckinPlugin(MaiBotPlugin):
             webui_token=cfg.webui.token,
             webui_session_timeout=cfg.webui.session_timeout,
             webui_host=cfg.webui.host,
-            webui_trust_proxy=cfg.webui.trust_proxy,
             vision_llm=self._vision_llm,
             use_vision_check=self._use_vision_check,
             checkin_wait=cfg.browser.checkin_wait,
@@ -337,9 +331,9 @@ class AutoCheckinPlugin(MaiBotPlugin):
             await self.web_server.start()
             self.ctx.logger.info(
                 f"自动签到 WebUI 已启动: http://{cfg.webui.host}:{cfg.webui.port}")
-            if cfg.webui.host == "127.0.0.1":
-                self.ctx.logger.info(
-                    "WebUI 当前仅监听本机 127.0.0.1，如需远程访问请修改 webui.host 配置。")
+            if cfg.webui.host == "0.0.0.0":
+                self.ctx.logger.warning(
+                    "WebUI 正在监听所有网络接口，请务必修改默认登录密钥并限制端口访问。")
             if cfg.webui.token == "sk-change-me":
                 self.ctx.logger.warning(
                     "WebUI 正在使用默认登录密钥 sk-change-me，建议尽快在插件配置中修改。")

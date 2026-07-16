@@ -5,14 +5,12 @@
 [webui]
 # 端口：WebUI 控制面板端口
 port = 9010
-# 监听地址：127.0.0.1 仅限本机访问，0.0.0.0 允许外部访问
-host = "127.0.0.1"
+# 监听地址：默认允许从容器外部访问
+host = "0.0.0.0"
 # 登录密钥：访问 WebUI 时需要输入，请务必修改默认值
 token = "sk-change-me"
 # 登录空闲超时（分钟）：超时未操作后需要重新登录 WebUI
 session_timeout = 30
-# 信任反向代理：信任 X-Forwarded-For 请求头识别客户端 IP，仅在经反向代理访问时开启
-trust_proxy = false
 # 画面刷新间隔（毫秒）：WebUI 中浏览器画面的截图刷新间隔
 screenshot_interval = 500
 

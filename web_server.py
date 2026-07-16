@@ -29,16 +29,14 @@ class WebServer:
                  action_delay: int = 1000,
                  webui_token: str = "sk-change-me",
                  webui_session_timeout: int = 30,
-                 webui_host: str = "127.0.0.1",
-                 webui_trust_proxy: bool = False,
+                 webui_host: str = "0.0.0.0",
                  vision_llm=None, use_vision_check: bool = False,
                  checkin_wait: int = 5):
         self.browser_manager = browser_manager
         self.checkin_manager = checkin_manager
         self.recorder = recorder
         self.port = port
-        self.host = webui_host or "127.0.0.1"
-        self.trust_proxy = webui_trust_proxy
+        self.host = webui_host or "0.0.0.0"
         self.screenshot_interval = screenshot_interval / 1000.0  # 转秒
         self.action_delay = action_delay
         self.webui_token = webui_token or "sk-change-me"
@@ -191,11 +189,10 @@ class WebServer:
         return "未登录或登录已失效，请重新输入登录密钥。"
 
     def _get_client_ip(self, request: web.Request) -> str:
-        """获取当前请求的客户端 IP。仅在显式信任反向代理时解析 X-Forwarded-For"""
-        if self.trust_proxy:
-            forwarded = request.headers.get("X-Forwarded-For", "").strip()
-            if forwarded:
-                return forwarded.split(",")[0].strip()
+        """优先使用反向代理传递的客户端 IP"""
+        forwarded = request.headers.get("X-Forwarded-For", "").strip()
+        if forwarded:
+            return forwarded.split(",")[0].strip()
         return request.remote or "unknown"
 
     def _cleanup_expired_sessions(self):
@@ -367,22 +364,6 @@ class WebServer:
 
     async def _handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """WebSocket 连接 - 推送截图 + 接收用户输入"""
-        # 校验 Origin 与 Host 一致，防跨站 WebSocket 劫持
-        origin = request.headers.get("Origin", "")
-        if origin:
-            from urllib.parse import urlparse
-            origin_host = urlparse(origin).netloc
-            request_host = request.headers.get("Host", "")
-            forwarded_host = (
-                request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
-                if self.trust_proxy else ""
-            )
-            if origin_host not in {request_host, forwarded_host}:
-                logger.warning(
-                    f"拒绝 WebSocket 连接：Origin {origin_host} 与 Host "
-                    f"{request_host} 不一致")
-                return web.Response(status=403, text="Origin 校验失败")
-
         session_id = request["auth_session_id"]
         ws = web.WebSocketResponse()
         await ws.prepare(request)
