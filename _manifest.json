@@ -34,7 +34,7 @@
     }
   ],
   "capabilities": [
-    "send_message",
+    "send.text",
     "llm.generate",
     "llm.get_available_models"
   ],
