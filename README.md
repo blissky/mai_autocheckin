@@ -20,7 +20,7 @@ MaiBot 自动签到插件 —— 通过 Camoufox 浏览器自动化实现多网�
 - **登录持久化**：基于持久化浏览器 Profile，重启后无需重新登录
 - **空闲自动关闭**：浏览器空闲超时后自动关闭，节省资源
 - **WebUI 登录鉴权**：token 登录 + HttpOnly 会话 Cookie + 可配置空闲超时，防止面板裸露访问
-- **依赖初始化**：首次启动自动安装 Python 依赖并下载 Camoufox；Linux 系统库仅在用户显式授权后才自动安装
+- **依赖初始化**：默认不自动安装任何依赖；只有显式填写授权短语后才会自行安装 Python 依赖、系统库并下载 Camoufox
 
 ## 插件逻辑
 
@@ -78,24 +78,22 @@ git clone https://github.com/blissky/mai_autocheckin.git
 
 2. 重启 MaiBot 或在 WebUI 插件管理中加载本插件。
 
-3. 首次加载时插件会自动安装 `requirements.txt` 中的 Python 依赖，并下载 Camoufox 浏览器二进制文件。如果自动安装失败，请在 MaiBot 运行环境中手动执行：
+3. **插件默认不会自动安装任何依赖。** 缺少依赖时插件会停止启动，并在日志中给出手动命令。请在 MaiBot 运行环境中手动执行：
 
 ```bash
 pip install "camoufox[geoip]>=0.4.0" "aiohttp>=3.9.0" "playwright>=1.40.0"
 python -m camoufox fetch
 ```
 
-Linux 还需要 Camoufox 运行所需的 GTK、音频、图形和无障碍系统库。**插件默认不会安装任何系统软件**：检测到缺库时会停止启动，并在日志中给出当前发行版对应的安装命令，请手动执行。
-
-如果你确实希望插件自动调用系统包管理器补齐这些库，需要在插件配置的「自动安装系统库确认」（`[plugin] system_deps_consent`）中精确填写：
+如果你希望插件自行补齐依赖，需要在插件配置的「自动安装依赖确认」（`[plugin] auto_install_consent`）中精确填写：
 
 ```
-我同意自动安装缺失系统库
+我同意自动安装缺失依赖
 ```
 
-只有该项完全匹配时插件才会执行安装。使用不可变镜像、只读根文件系统或精简镜像时请保持留空，改为在构建镜像阶段预装系统库。
+只有该项完全匹配时，插件才会执行 pip 安装、系统包管理器安装和 Camoufox 下载。使用不可变镜像、只读根文件系统或精简镜像时请保持留空，改为在构建镜像阶段预装依赖。
 
-根据发行版执行一条对应命令：
+4. Linux 还需要 Camoufox 运行所需的 GTK、音频、图形和无障碍系统库，根据发行版执行一条对应命令：
 
 ```bash
 # Debian / Ubuntu
@@ -161,16 +159,16 @@ zypper install -y gtk3 dbus-1-glib alsa-lib libX11-xcb1 libXcomposite1 libXdamag
 
 ## 配置项
 
-运行时配置文件为插件目录下由 Runner 首次加载时自动生成的 `config.toml`，也可在 MaiBot WebUI 的插件配置页中修改，保存后自动生效（插件会重启 WebUI 与定时任务）。配置结构和默认值以 `plugin.py` 中的 `config_model` 为准，仓库中的 `config.toml.example` 仅供参考；`config.toml` 已被 Git 忽略，不会随插件更新覆盖用户配置。
+运行时配置文件为插件目录下由 Runner 首次加载时自动生成的 `config.toml`，也可在 MaiBot WebUI 的插件配置页中修改，保存后自动生效（插件会重启 WebUI 与定时任务）。配置结构和默认值以 `plugin.py` 中的 `config_model` 为准；`config.toml` 已被 Git 忽略，不会随插件更新覆盖用户配置。
 
-> `[plugin] enabled` 是插件开关，默认开启；关闭后不会安装依赖或启动 WebUI、浏览器和定时任务。`system_deps_consent` 默认留空，表示禁止插件安装系统软件。`config_version` 是宿主要求的隐藏字段，勿手动修改。
+> `[plugin] enabled` 是插件开关，默认开启；关闭后不会安装依赖或启动 WebUI、浏览器和定时任务。`auto_install_consent` 默认留空，表示禁止插件自动安装任何依赖。`config_version` 是宿主要求的隐藏字段，勿手动修改。
 
 ### `[plugin]`
 
 | 配置 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `enabled` | bool | true | 是否启用插件；关闭后不启动任何内部服务 |
-| `system_deps_consent` | string | 空 | 系统库自动安装授权。留空时插件绝不调用包管理器；精确填写 `我同意自动安装缺失系统库` 后才允许自动安装 |
+| `auto_install_consent` | string | 空 | 依赖自动安装授权。留空时插件绝不执行安装命令；精确填写 `我同意自动安装缺失依赖` 后才允许自动安装 |
 | `config_version` | string | `1.0.0` | 宿主配置版本字段，在 WebUI 中隐藏且不可编辑 |
 
 ### `[webui]`
@@ -264,6 +262,22 @@ WebUI 登录会话仅保存在内存中，插件重启后需要重新登录。
 
 ## 安全建议
 
+### 自动安装授权
+
+插件默认不执行任何安装命令。只有当 `[plugin] auto_install_consent` 精确等于 `我同意自动安装缺失依赖` 时，插件才会在检测到缺失项后代表你执行以下操作（去掉首尾空白后逐字比对，内容不一致即视为未授权）：
+
+| 缺失项 | 授权后插件执行的命令 | 影响范围 |
+|--------|---------------------|----------|
+| Python 包 `camoufox` | `<当前解释器> -m pip install --progress-bar=on -r requirements.txt` | 修改 MaiBot 所在的 Python 环境，会拉取 `camoufox[geoip]`、`aiohttp`、`playwright` 及其传递依赖 |
+| Camoufox 所需系统库 | `apt-get update && apt-get install -y ...`（或 `dnf` / `yum` / `pacman` / `zypper` 对应命令） | 以插件进程权限修改系统软件包，Debian 系还会刷新 APT 软件源索引 |
+| Camoufox 浏览器二进制 | `<当前解释器> -m camoufox fetch` | 从网络下载浏览器压缩包并解压到 Camoufox 缓存目录 |
+
+安装过程的完整输出会实时写入 MaiBot 日志。未授权时插件不会尝试安装，而是记录错误、给出同样的手动命令并停止启动内部服务。
+
+**不可变镜像、只读根文件系统或最小镜像请保持该项留空**，改为在构建镜像阶段预装依赖，避免运行期修改环境导致镜像漂移或启动失败。
+
+### 其他
+
 - **必须修改默认登录密钥**：`token` 默认值 `sk-change-me` 仅为占位符，不提供任何保护。启用插件前请改为随机强密钥，例如 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成
 - **录制内容明文存储**：录制时通过键盘输入的所有文本（包括登录密码）会明文保存到 `sites.json`，请妥善保管数据目录，尽量利用浏览器持久化登录态而非在录制动作中输入密码
 - **网络暴露**：WebUI 默认只监听 `127.0.0.1`。改为 `0.0.0.0` 后面板会暴露给所有网络接口，此时必须已修改默认密钥，并限制端口访问、通过 HTTPS 反向代理转发，切勿直接暴露到公网
@@ -292,7 +306,8 @@ WebUI 登录会话仅保存在内存中，插件重启后需要重新登录。
 
 ## 常见问题
 
-- **启动浏览器报 `No module named 'camoufox'`**：依赖自动安装失败，请在 MaiBot 运行环境中手动 `pip install "camoufox[geoip]"`。
+- **插件启动报「未获授权自动安装依赖」**：这是默认行为。按日志给出的命令手动安装，或填写 `auto_install_consent` 授权短语后重新加载插件。
+- **启动浏览器报 `No module named 'camoufox'`**：在 MaiBot 运行环境中手动 `pip install "camoufox[geoip]"`。
 - **报 Camoufox 二进制未下载**：手动执行 `python -m camoufox fetch`。
 - **Linux 下浏览器启动失败**：多为缺少系统库，参考安装章节手动安装 GTK3 等依赖。
 - **识图调用失败**：确认宿主 MaiBot 已配置 `vlm` 任务，且该任务的模型支持图像输入；多模态消息体格式依宿主实现可能存在差异，可用 WebUI「识图测试」定位问题。

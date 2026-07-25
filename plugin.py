@@ -267,7 +267,7 @@ class BrowserSectionConfig(PluginConfigBase):
     )
 
 
-SYSTEM_DEPS_CONSENT_PHRASE = "我同意自动安装缺失系统库"
+AUTO_INSTALL_CONSENT_PHRASE = "我同意自动安装缺失依赖"
 
 
 class PluginSectionConfig(PluginConfigBase):
@@ -286,17 +286,17 @@ class PluginSectionConfig(PluginConfigBase):
             "order": 0,
         },
     )
-    system_deps_consent: str = Field(
+    auto_install_consent: str = Field(
         default="",
-        description=f"留空则不自动安装系统库；填写「{SYSTEM_DEPS_CONSENT_PHRASE}」后才允许",
+        description=f"留空则不自动安装任何依赖；填写「{AUTO_INSTALL_CONSENT_PHRASE}」后才允许",
         json_schema_extra={
-            "label": "自动安装系统库确认",
+            "label": "自动安装依赖确认",
             "hint": (
-                f"仅当此项精确填写「{SYSTEM_DEPS_CONSENT_PHRASE}」时，插件才会调用系统包管理器"
-                "安装缺失的 Camoufox 系统库；留空时只在日志中给出手动安装命令。"
-                "使用不可变镜像或最小镜像时请保持留空。"
+                f"仅当此项精确填写「{AUTO_INSTALL_CONSENT_PHRASE}」时，插件才会执行 pip 安装 "
+                "Python 依赖、调用系统包管理器安装 Camoufox 系统库、下载 Camoufox 浏览器二进制；"
+                "留空时只在日志中给出手动命令。使用不可变镜像或最小镜像时请保持留空。"
             ),
-            "placeholder": SYSTEM_DEPS_CONSENT_PHRASE,
+            "placeholder": AUTO_INSTALL_CONSENT_PHRASE,
             "order": 1,
         },
     )
@@ -390,10 +390,10 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
         # 确保 Python 包、系统依赖和 Camoufox 浏览器二进制已就绪。
         # 安装与下载均为阻塞操作，放入工作线程避免阻塞 Runner 心跳和配置 RPC。
-        await asyncio.to_thread(self._ensure_python_deps)
-        await asyncio.to_thread(
-            self._ensure_system_deps, cfg.plugin.system_deps_consent)
-        await asyncio.to_thread(self._ensure_camoufox_binary)
+        allow_install = self._has_install_consent(cfg.plugin.auto_install_consent)
+        await asyncio.to_thread(self._ensure_python_deps, allow_install)
+        await asyncio.to_thread(self._ensure_system_deps, allow_install)
+        await asyncio.to_thread(self._ensure_camoufox_binary, allow_install)
 
         # 核心组件
         self.browser_manager = BrowserManager(
@@ -556,8 +556,24 @@ class AutoCheckinPlugin(MaiBotPlugin):
         if return_code != 0:
             raise subprocess.CalledProcessError(return_code, command)
 
-    def _ensure_python_deps(self):
-        """检查并自动安装插件 requirements.txt 中的 Python 依赖"""
+    @staticmethod
+    def _has_install_consent(consent: str) -> bool:
+        """判断用户是否已精确填写自动安装授权短语。"""
+        return consent.strip() == AUTO_INSTALL_CONSENT_PHRASE
+
+    @staticmethod
+    def _refuse_install(what: str, manual_cmd: str) -> RuntimeError:
+        """未获授权时记录并返回统一的拒绝异常。"""
+        message = (
+            f"{what}，插件未获授权自动安装依赖。请手动执行: {manual_cmd}；"
+            f"如需插件自动处理，请在插件配置的「自动安装依赖确认」中填写"
+            f"「{AUTO_INSTALL_CONSENT_PHRASE}」。"
+        )
+        logger.error(message)
+        return RuntimeError(message)
+
+    def _ensure_python_deps(self, allow_install: bool = False):
+        """检查 Python 依赖，仅在获得授权后自动安装 requirements.txt"""
         if importlib.util.find_spec("camoufox") is not None:
             return
 
@@ -565,6 +581,10 @@ class AutoCheckinPlugin(MaiBotPlugin):
         if not requirements_path.exists():
             logger.error(f"未找到依赖文件: {requirements_path}")
             return
+
+        manual_cmd = f"{sys.executable} -m pip install -r {requirements_path}"
+        if not allow_install:
+            raise self._refuse_install("缺少 Python 依赖 camoufox", manual_cmd)
 
         logger.info("检测到缺少 Python 依赖 camoufox，正在自动安装 requirements.txt...")
         try:
@@ -584,10 +604,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
             importlib.invalidate_caches()
             logger.info("Python 依赖安装完成")
         except Exception as e:
-            logger.error(
-                f"自动安装 Python 依赖失败: {e}。请手动执行: "
-                f"{sys.executable} -m pip install -r {requirements_path}"
-            )
+            logger.error(f"自动安装 Python 依赖失败: {e}。请手动执行: {manual_cmd}")
 
     @staticmethod
     def _parse_timezone(tz_str: str) -> ZoneInfo:
@@ -598,8 +615,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
             logger.warning(f"无效的时区 '{tz_str}'，使用默认时区 Asia/Shanghai: {e}")
             return ZoneInfo("Asia/Shanghai")
 
-    def _ensure_system_deps(self, consent: str = ""):
-        """检查 Linux 系统库，仅在用户显式确认后自动安装缺失项。"""
+    def _ensure_system_deps(self, allow_install: bool = False):
+        """检查 Linux 系统库，仅在获得授权后自动安装缺失项。"""
         import platform
         if platform.system() != "Linux":
             return
@@ -645,16 +662,11 @@ class AutoCheckinPlugin(MaiBotPlugin):
         update_cmd = pm_info.get("update_cmd")
         manual_cmd = " ".join(install_cmd + packages)
 
-        if consent.strip() != SYSTEM_DEPS_CONSENT_PHRASE:
-            message = (
-                f"缺少 Camoufox 系统库: {missing_text}。插件未获授权修改系统，不会自动安装。"
-                f"请手动执行: {manual_cmd}；"
-                f"如需插件自动安装，请在插件配置的「自动安装系统库确认」中填写「{SYSTEM_DEPS_CONSENT_PHRASE}」。"
-            )
-            logger.error(message)
-            raise RuntimeError(message)
+        if not allow_install:
+            raise self._refuse_install(
+                f"缺少 Camoufox 系统库: {missing_text}", manual_cmd)
 
-        logger.info(f"已获得自动安装授权，检测到缺少 {len(missing)} 个系统库，准备安装")
+        logger.info(f"已获得安装授权，检测到缺少 {len(missing)} 个系统库，准备安装")
 
         import shutil
 
@@ -783,8 +795,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
     # ==================== Camoufox 初始化 ====================
 
-    def _ensure_camoufox_binary(self):
-        """检查并自动下载 Camoufox 浏览器二进制"""
+    def _ensure_camoufox_binary(self, allow_install: bool = False):
+        """检查 Camoufox 浏览器二进制，仅在获得授权后自动下载"""
         try:
             from camoufox.pkgman import launch_path
             exe_path = launch_path()
@@ -793,6 +805,10 @@ class AutoCheckinPlugin(MaiBotPlugin):
                 return
         except Exception:
             pass
+
+        manual_cmd = f"{sys.executable} -m camoufox fetch"
+        if not allow_install:
+            raise self._refuse_install("Camoufox 浏览器二进制未下载", manual_cmd)
 
         logger.info("正在自动下载 Camoufox 浏览器二进制，首次运行需要等待...")
         try:
@@ -803,7 +819,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
             )
             logger.info("Camoufox 浏览器二进制下载完成")
         except Exception as e:
-            logger.error(f"自动下载 Camoufox 浏览器失败: {e}，请手动执行: python -m camoufox fetch")
+            logger.error(f"自动下载 Camoufox 浏览器失败: {e}，请手动执行: {manual_cmd}")
 
     # ==================== 定时调度 ====================
 
