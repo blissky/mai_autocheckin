@@ -2,6 +2,12 @@
 # 修改后保存即可，插件会自动重载生效（重启 WebUI 与定时任务）。
 # 识图验证无需配置：宿主 MaiBot 配置了 vlm（视觉）任务时自动启用。
 
+[plugin]
+# 是否启用插件；关闭后不会安装依赖或启动内部服务
+# 配置版本号由宿主管理，请勿手动修改
+enabled = true
+config_version = "1.0.0"
+
 [webui]
 # 端口：WebUI 控制面板端口
 port = 9010
@@ -34,7 +40,3 @@ action_delay = 1000
 checkin_wait = 5
 # 空闲自动关闭（分钟）：浏览器空闲超过该时长后自动关闭，0 表示禁用
 idle_timeout = 10
-
-[plugin]
-# 配置版本号（宿主要求的字段，勿手动修改）
-config_version = "1.0.0"

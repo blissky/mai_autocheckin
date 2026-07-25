@@ -527,6 +527,16 @@ function connectWebSocket() {
         document.getElementById('noBrowser').style.display = 'none';
       };
       img.src = url;
+    } else if (typeof e.data === 'string') {
+      try {
+        const message = JSON.parse(e.data);
+        if (message.type === 'error') {
+          toast(message.message || '浏览器操作失败', 'error');
+          addLog(message.message || '浏览器操作失败');
+        }
+      } catch (_) {
+        addLog(e.data);
+      }
     }
   };
 }

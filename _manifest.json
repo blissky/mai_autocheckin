@@ -31,6 +31,11 @@
       "type": "python_package",
       "name": "aiohttp",
       "version_spec": ">=3.9.0"
+    },
+    {
+      "type": "python_package",
+      "name": "playwright",
+      "version_spec": ">=1.40.0"
     }
   ],
   "capabilities": [

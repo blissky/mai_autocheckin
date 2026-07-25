@@ -17,7 +17,7 @@ MaiBot 自动签到插件 —— 通过 Camoufox 浏览器自动化实现多网�
 - **登录持久化**：基于持久化浏览器 Profile，重启后无需重新登录
 - **空闲自动关闭**：浏览器空闲超时后自动关闭，节省资源
 - **WebUI 登录鉴权**：token 登录 + IP 绑定 + 可配置会话超时，防止面板裸露访问
-- **依赖自动安装**：首次启动自动安装 Python 依赖、Linux 系统库并下载 Camoufox 浏览器二进制
+- **依赖初始化**：首次启动自动安装 Python 依赖并下载 Camoufox；Linux 系统库仅在容器内自动安装
 
 ## 插件逻辑
 
@@ -78,15 +78,36 @@ git clone https://github.com/blissky/mai_autocheckin.git
 3. 首次加载时插件会自动安装 `requirements.txt` 中的 Python 依赖，并下载 Camoufox 浏览器二进制文件。如果自动安装失败，请在 MaiBot 运行环境中手动执行：
 
 ```bash
-pip install "camoufox[geoip]>=0.4.0" "aiohttp>=3.9.0"
+pip install "camoufox[geoip]>=0.4.0" "aiohttp>=3.9.0" "playwright>=1.40.0"
 python -m camoufox fetch
 ```
 
-Linux 服务器还需要 Camoufox 运行所需的系统库（插件会尝试自动安装；Debian/Ubuntu 手动安装示例）：
+Linux 还需要 Camoufox 运行所需的 GTK、音频、图形和无障碍系统库。插件只会在确认运行于 Docker、containerd、Kubernetes、Podman 或 LXC 容器时自动安装；在宿主机运行且缺少系统库时，插件会停止启动并在日志中给出安装命令，不会静默修改系统。
+
+根据发行版执行一条对应命令：
 
 ```bash
-apt-get install libgtk-3-0 libx11-xcb1 libasound2 libxtst6
+# Debian / Ubuntu
+apt-get update && apt-get install -y libgtk-3-0 libdbus-glib-1-2 libasound2 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxkbcommon0 libatspi2.0-0
+
+# Fedora / RHEL 8+
+dnf install -y gtk3 dbus-glib alsa-lib libxcb libXcomposite libXdamage libXrandr mesa-libgbm pango atk at-spi2-atk cups-libs libxkbcommon at-spi2-core
+
+# RHEL 7 / CentOS 7
+yum install -y gtk3 dbus-glib alsa-lib libxcb libXcomposite libXdamage libXrandr mesa-libgbm pango atk at-spi2-atk cups-libs libxkbcommon at-spi2-core
+
+# Arch Linux
+pacman -Sy --noconfirm --needed gtk3 dbus-glib alsa-lib libxcomposite libxdamage libxrandr mesa pango atk at-spi2-atk libcups libxkbcommon at-spi2-core
+
+# openSUSE
+zypper install -y gtk3 dbus-1-glib alsa-lib libX11-xcb1 libXcomposite1 libXdamage1 libXrandr2 libgbm1 pango atk at-spi2-atk libcups2 libxkbcommon0 at-spi2-core
 ```
+
+## 内置 Web 服务
+
+插件会自行启动 aiohttp HTTP 服务，监听 `[webui] host` 和 `port`（默认 `0.0.0.0:9010`），并通过同一端口的 `/ws` WebSocket 推送 JPEG 浏览器截图。MaiBot 1.1.0 的 manifest capability 仅覆盖宿主 RPC，没有可声明自建 HTTP 服务的 capability，因此 `_manifest.json` 中不会虚构网络监听能力。
+
+默认监听所有网络接口便于容器端口映射，但也会扩大暴露面。请修改默认 token，不要直接将端口暴露到公网，并使用带 HTTPS 和 WebSocket 转发的反向代理及防火墙访问控制。
 
 ## 使用方法
 
@@ -130,7 +151,14 @@ apt-get install libgtk-3-0 libx11-xcb1 libasound2 libxtst6
 
 配置文件为插件目录下的 `config.toml`，也可在 MaiBot WebUI 的插件配置页中修改，保存后自动生效（插件会重启 WebUI 与定时任务）。
 
-> `[plugin]` 节仅含宿主要求的 `config_version` 版本号字段（宿主校验 config.toml 时的硬性要求），勿手动修改。
+> `[plugin] enabled` 是插件开关，默认开启；关闭后不会安装依赖或启动 WebUI、浏览器和定时任务。`config_version` 是宿主要求的隐藏字段，勿手动修改。
+
+### `[plugin]`
+
+| 配置 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `enabled` | bool | true | 是否启用插件；关闭后不启动任何内部服务 |
+| `config_version` | string | `1.0.0` | 宿主配置版本字段，在 WebUI 中隐藏且不可编辑 |
 
 ### `[webui]`
 
@@ -226,6 +254,8 @@ WebUI 登录会话仅保存在内存中，插件重启后需要重新登录。
 - **及时修改默认登录密钥**：`token` 默认值为 `sk-change-me`，启用后请立即修改
 - **录制内容明文存储**：录制时通过键盘输入的所有文本（包括登录密码）会明文保存到 `sites.json`，请妥善保管数据目录，尽量利用浏览器持久化登录态而非在录制动作中输入密码
 - **网络暴露**：WebUI 默认监听 `0.0.0.0`，请勿将端口直接暴露到公网；建议限制端口访问并通过 HTTPS 反向代理转发
+- **目标 URL 限制**：浏览器仅允许访问解析到公网 IP 的 HTTP/HTTPS 地址。站点保存、手动导航、录制回放、重定向和页面子资源都会校验 DNS、IPv4 与 IPv6，并拒绝本机、私网、链路本地、云元数据和其他保留地址
+- **网络隔离**：应用层 URL 检查不能完全替代网络沙箱，也不能消除所有 DNS 重绑定时序风险；容器和宿主防火墙仍应限制插件访问内网及云元数据服务
 - **登录保护**：同一 IP 连续输错密钥 5 次后会被锁定，锁定时间按失败次数指数递增（最长 15 分钟）
 
 ## 依赖
@@ -233,7 +263,7 @@ WebUI 登录会话仅保存在内存中，插件重启后需要重新登录。
 - Python 3.10+
 - [camoufox](https://github.com/daijro/camoufox) — 反指纹浏览器
 - [aiohttp](https://github.com/aio-libs/aiohttp) — WebUI 服务器
-- [playwright](https://github.com/microsoft/playwright-python) — 浏览器自动化（由 camoufox 内部使用）
+- [playwright](https://github.com/microsoft/playwright-python) — 浏览器自动化直接依赖
 
 ## 实现说明
 

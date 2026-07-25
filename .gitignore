@@ -11,3 +11,4 @@ build/
 plugin_guides/
 .claude/
 .tmp_browser_test/
+/tests/

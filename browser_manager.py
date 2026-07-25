@@ -8,13 +8,19 @@
 """
 
 import asyncio
+import ipaddress
+import logging
 import os
+import socket
 import time
 from pathlib import Path
-
-import logging
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+
+class UnsafeURLError(ValueError):
+    """目标 URL 不符合公网访问限制。"""
 
 
 class BrowserManager:
@@ -32,6 +38,7 @@ class BrowserManager:
         self._lock = asyncio.Lock()
         self._last_activity = 0.0  # 最后活动时间戳
         self._last_screenshot_error_log = 0.0
+        self._validated_hosts: set[tuple[str, int]] = set()
 
     @property
     def page(self):
@@ -51,6 +58,103 @@ class BrowserManager:
         if not self.is_running or self._last_activity == 0.0:
             return 0.0
         return time.time() - self._last_activity
+
+    @staticmethod
+    def _parse_public_url(url: str) -> tuple[str, str, int | None]:
+        """解析公网 URL，返回 scheme、hostname 和 port。"""
+        if not isinstance(url, str) or not url.strip():
+            raise UnsafeURLError("URL 不能为空")
+
+        try:
+            parsed = urlparse(url.strip())
+            port = parsed.port
+        except ValueError as e:
+            raise UnsafeURLError("URL 端口格式无效") from e
+
+        if parsed.scheme.lower() not in {"http", "https", "ws", "wss"}:
+            raise UnsafeURLError("仅允许访问 HTTP、HTTPS 或对应的 WebSocket 地址")
+        if not parsed.hostname:
+            raise UnsafeURLError("URL 缺少有效的主机名")
+        if parsed.username is not None or parsed.password is not None:
+            raise UnsafeURLError("URL 不允许包含用户名或密码")
+
+        hostname = parsed.hostname.rstrip(".").lower()
+        if not hostname:
+            raise UnsafeURLError("URL 缺少有效的主机名")
+        try:
+            hostname = hostname.encode("idna").decode("ascii")
+        except UnicodeError as e:
+            raise UnsafeURLError("URL 主机名格式无效") from e
+        if hostname == "localhost" or hostname.endswith(".localhost"):
+            raise UnsafeURLError("禁止访问本机地址")
+        return parsed.scheme.lower(), hostname, port
+
+    @staticmethod
+    def _validate_resolved_addresses(hostname: str, port: int) -> None:
+        """确保 hostname 的全部 DNS 结果都是全局可路由地址。"""
+        try:
+            literal_ip = ipaddress.ip_address(hostname)
+            addresses = {literal_ip}
+        except ValueError:
+            try:
+                records = socket.getaddrinfo(
+                    hostname,
+                    port,
+                    family=socket.AF_UNSPEC,
+                    type=socket.SOCK_STREAM,
+                )
+            except socket.gaierror as e:
+                raise UnsafeURLError("目标主机 DNS 解析失败") from e
+
+            addresses = set()
+            for record in records:
+                try:
+                    addresses.add(ipaddress.ip_address(record[4][0]))
+                except ValueError as e:
+                    raise UnsafeURLError("目标主机返回了无效 IP 地址") from e
+
+        if not addresses:
+            raise UnsafeURLError("目标主机没有可用的 IP 地址")
+        unsafe = sorted(str(address) for address in addresses if not address.is_global)
+        if unsafe:
+            raise UnsafeURLError(f"禁止访问本机、私网或保留地址: {', '.join(unsafe)}")
+
+    async def validate_url(self, url: str, allowed_schemes: set[str] | None = None) -> str:
+        """校验 URL 仅解析到公网 IPv4/IPv6 地址。"""
+        scheme, hostname, configured_port = self._parse_public_url(url)
+        allowed_schemes = allowed_schemes or {"http", "https"}
+        if scheme not in allowed_schemes:
+            raise UnsafeURLError(f"不允许使用 {scheme} 协议")
+        port = configured_port or (443 if scheme in {"https", "wss"} else 80)
+        cache_key = (hostname, port)
+        if cache_key not in self._validated_hosts:
+            await asyncio.to_thread(self._validate_resolved_addresses, hostname, port)
+            self._validated_hosts.add(cache_key)
+        return url.strip()
+
+    async def _handle_network_route(self, route, request) -> None:
+        """阻止页面、重定向和子资源访问非公网网络。"""
+        parsed = urlparse(request.url)
+        if parsed.scheme in {"data", "blob", "about"}:
+            await route.continue_()
+            return
+        try:
+            await self.validate_url(request.url)
+        except UnsafeURLError as e:
+            logger.warning(f"已拦截不安全的浏览器请求 {request.url}: {e}")
+            await route.abort("blockedbyclient")
+            return
+        await route.continue_()
+
+    async def _handle_websocket_route(self, websocket) -> None:
+        """阻止页面建立到非公网地址的 WebSocket。"""
+        try:
+            await self.validate_url(websocket.url, {"ws", "wss"})
+        except UnsafeURLError as e:
+            logger.warning(f"已拦截不安全的 WebSocket {websocket.url}: {e}")
+            websocket.close(code=1008, reason="目标地址被安全策略拒绝")
+            return
+        websocket.connect_to_server()
 
     async def launch(self):
         """启动 Camoufox 浏览器"""
@@ -72,6 +176,7 @@ class BrowserManager:
                     headless=self.headless,
                     persistent_context=True,
                     user_data_dir=user_data_dir,
+                    service_workers="block",
                     block_webrtc=True,
                     i_know_what_im_doing=True,
                     viewport={"width": 1366, "height": 768},
@@ -100,6 +205,10 @@ class BrowserManager:
                     },
                 )
                 self._context = await self._cm.__aenter__()
+                await self._context.route("**/*", self._handle_network_route)
+                if hasattr(self._context, "route_web_socket"):
+                    await self._context.route_web_socket(
+                        "**/*", self._handle_websocket_route)
                 logger.info("Camoufox 浏览器已启动")
 
             except ImportError as e:
@@ -148,16 +257,23 @@ class BrowserManager:
                     self._context = None
 
     async def navigate(self, url: str) -> bool:
-        """导航到指定 URL"""
+        """安全导航到仅解析至公网地址的 URL。"""
         if not self.is_running:
             return False
+        safe_url = await self.validate_url(url)
         self.touch()
         try:
-            await self._page.goto(url, wait_until="domcontentloaded",
-                                  timeout=self.page_load_timeout)
+            await self._page.goto(
+                safe_url,
+                wait_until="domcontentloaded",
+                timeout=self.page_load_timeout,
+            )
+            await self.validate_url(self._page.url)
             return True
+        except UnsafeURLError:
+            raise
         except Exception as e:
-            logger.error(f"导航到 {url} 失败: {e}")
+            logger.error(f"导航到 {safe_url} 失败: {e}")
             return False
 
     async def screenshot(self, quality: int = 60) -> bytes:

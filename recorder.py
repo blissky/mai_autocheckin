@@ -15,6 +15,11 @@ from typing import Optional
 
 import logging
 
+try:
+    from .browser_manager import UnsafeURLError
+except ImportError:
+    from browser_manager import UnsafeURLError
+
 logger = logging.getLogger(__name__)
 
 
@@ -305,10 +310,10 @@ async def run_checkin(browser_manager, site: SiteConfig, action_delay: int = 100
         logger.info(f"正在签到: {site.name} ({site.url})")
         browser_manager.touch()
         try:
-            await page.goto(site.url, wait_until="domcontentloaded",
-                            timeout=browser_manager.page_load_timeout)
-        except Exception as e:
-            return f"页面加载失败: {str(e)[:50]}"
+            if not await browser_manager.navigate(site.url):
+                return "页面加载失败"
+        except UnsafeURLError as e:
+            return f"URL 被安全策略拒绝: {e}"
         finally:
             browser_manager.touch()
 
@@ -374,8 +379,8 @@ async def run_checkin(browser_manager, site: SiteConfig, action_delay: int = 100
 
                 elif action_type == "navigate":
                     url = action_dict.get("url", "")
-                    await page.goto(url, wait_until="domcontentloaded",
-                                    timeout=browser_manager.page_load_timeout)
+                    if not await browser_manager.navigate(url):
+                        raise RuntimeError("页面加载失败")
 
                 elif action_type == "scroll":
                     delta_y = action_dict.get("delta_y", 0)
@@ -402,6 +407,10 @@ async def run_checkin(browser_manager, site: SiteConfig, action_delay: int = 100
                     extra_wait = action_dict.get("delay", 1)
                     await asyncio.sleep(extra_wait)
 
+            except UnsafeURLError as e:
+                error_msg = f"URL 被安全策略拒绝: {e}"
+                logger.error(f"{site.name} {error_msg}")
+                return error_msg
             except Exception as e:
                 logger.warning(f"执行操作 {i+1}/{len(site.actions)} ({action_type}) 失败: {e}")
                 # 继续执行后续操作，不中断

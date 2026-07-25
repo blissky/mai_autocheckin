@@ -16,6 +16,11 @@ from aiohttp import web
 
 import logging
 
+try:
+    from .browser_manager import UnsafeURLError
+except ImportError:
+    from browser_manager import UnsafeURLError
+
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -385,7 +390,7 @@ class WebServer:
                         break
                     # WS 消息均为真实人类交互，刷新会话活动时间
                     session["last_active"] = time.time()
-                    await self._handle_ws_message(msg.data)
+                    await self._handle_ws_message(msg.data, ws)
                 elif msg.type == web.WSMsgType.ERROR:
                     logger.warning(f"WebSocket 错误: {ws.exception()}")
         finally:
@@ -394,7 +399,7 @@ class WebServer:
 
         return ws
 
-    async def _handle_ws_message(self, data: str):
+    async def _handle_ws_message(self, data: str, ws=None):
         """处理来自 WebUI 的鼠标/键盘事件"""
         try:
             msg = json.loads(data)
@@ -459,10 +464,17 @@ class WebServer:
 
             elif action == "navigate":
                 url = msg.get("url", "")
-                await self.browser_manager.navigate(url)
+                await self.browser_manager.validate_url(url)
+                if not await self.browser_manager.navigate(url):
+                    raise RuntimeError("导航失败")
                 if self.recorder.is_recording:
                     self.recorder.record_navigate(url)
 
+        except UnsafeURLError as e:
+            message = f"URL 被安全策略拒绝: {e}"
+            logger.warning(message)
+            if ws is not None:
+                await ws.send_json({"type": "error", "message": message})
         except Exception as e:
             logger.warning(f"处理 WebSocket 消息失败: {e}")
 
@@ -537,12 +549,25 @@ class WebServer:
         url = body.get("url", "")
         if not url:
             return web.json_response({"success": False, "message": "缺少 URL"}, status=400)
+        try:
+            await self.browser_manager.validate_url(url)
+        except UnsafeURLError as e:
+            return web.json_response({
+                "success": False,
+                "message": f"URL 被安全策略拒绝: {e}",
+            }, status=400)
         if not self.browser_manager.is_running:
             try:
                 await self.browser_manager.launch()
             except Exception as e:
                 return web.json_response({"success": False, "message": f"浏览器启动失败: {e}"}, status=500)
-        ok = await self.browser_manager.navigate(url)
+        try:
+            ok = await self.browser_manager.navigate(url)
+        except UnsafeURLError as e:
+            return web.json_response({
+                "success": False,
+                "message": f"URL 被安全策略拒绝: {e}",
+            }, status=400)
         if ok and self.recorder.is_recording:
             self.recorder.record_navigate(url)
         return web.json_response({
@@ -560,6 +585,13 @@ class WebServer:
         url = body.get("url", "").strip()
         if not name or not url:
             return web.json_response({"success": False, "message": "名称和URL不能为空"}, status=400)
+        try:
+            await self.browser_manager.validate_url(url)
+        except UnsafeURLError as e:
+            return web.json_response({
+                "success": False,
+                "message": f"URL 被安全策略拒绝: {e}",
+            }, status=400)
         if self.checkin_manager.get_site(name):
             return web.json_response({"success": False, "message": "站点名称已存在"}, status=400)
         self.checkin_manager.add_site(name, url)
@@ -580,6 +612,16 @@ class WebServer:
         name = request.match_info["name"]
         body = await request.json()
         actions = body.get("actions", [])
+        for action in actions:
+            if action.get("type") != "navigate":
+                continue
+            try:
+                await self.browser_manager.validate_url(action.get("url", ""))
+            except UnsafeURLError as e:
+                return web.json_response({
+                    "success": False,
+                    "message": f"录制操作中的 URL 被安全策略拒绝: {e}",
+                }, status=400)
         self.checkin_manager.update_site_actions(name, actions)
         return web.json_response({"success": True, "count": len(actions)})
 

@@ -137,29 +137,52 @@ class WebUISectionConfig(PluginConfigBase):
 
     __ui_label__ = "WebUI"
     __ui_icon__ = "language"
-    __ui_order__ = 0
+    __ui_order__ = 1
 
     port: int = Field(
-        default=9010, description="WebUI 控制面板端口",
-        json_schema_extra={"title": "端口"},
+        default=9010,
+        description="WebUI 控制面板端口",
+        json_schema_extra={
+            "label": "端口",
+            "hint": "WebUI 控制面板监听端口。",
+            "order": 0,
+        },
     )
     host: str = Field(
         default="0.0.0.0",
         description="WebUI 监听地址，默认允许容器外部访问",
-        json_schema_extra={"title": "监听地址"},
+        json_schema_extra={
+            "label": "监听地址",
+            "hint": "默认监听所有网络接口，容器外部可访问。",
+            "order": 1,
+        },
     )
     token: str = Field(
         default="sk-change-me",
         description="访问 WebUI 时需要输入，请务必修改默认值",
-        json_schema_extra={"title": "登录密钥"},
+        json_schema_extra={
+            "label": "登录密钥",
+            "hint": "访问 WebUI 时需要输入，请务必修改默认值。",
+            "order": 2,
+        },
     )
     session_timeout: int = Field(
-        default=30, description="超时未操作后需要重新登录 WebUI",
-        json_schema_extra={"title": "登录空闲超时（分钟）"},
+        default=30,
+        description="超时未操作后需要重新登录 WebUI",
+        json_schema_extra={
+            "label": "登录空闲超时（分钟）",
+            "hint": "超过该时间未操作后需要重新登录。",
+            "order": 3,
+        },
     )
     screenshot_interval: int = Field(
-        default=500, description="WebUI 中浏览器画面的截图刷新间隔",
-        json_schema_extra={"title": "画面刷新间隔（毫秒）"},
+        default=500,
+        description="WebUI 中浏览器画面的截图刷新间隔",
+        json_schema_extra={
+            "label": "画面刷新间隔（毫秒）",
+            "hint": "数值越小画面越流畅，但资源占用越高。",
+            "order": 4,
+        },
     )
 
 
@@ -168,16 +191,25 @@ class ScheduleSectionConfig(PluginConfigBase):
 
     __ui_label__ = "定时计划"
     __ui_icon__ = "schedule"
-    __ui_order__ = 1
+    __ui_order__ = 2
 
     cron_rules: str = Field(
         default="30 8 * * *",
         description="每行一条 5 字段 Cron 表达式（分 时 日 月 周），# 开头为注释",
-        json_schema_extra={"title": "签到计划"},
+        json_schema_extra={
+            "label": "签到计划",
+            "hint": "每行一条 5 字段 Cron 表达式（分 时 日 月 周）。",
+            "order": 0,
+        },
     )
     timezone: str = Field(
-        default="Asia/Shanghai", description="定时签到使用的时区",
-        json_schema_extra={"title": "时区"},
+        default="Asia/Shanghai",
+        description="定时签到使用的时区",
+        json_schema_extra={
+            "label": "时区",
+            "hint": "使用 IANA 时区名称，例如 Asia/Shanghai。",
+            "order": 1,
+        },
     )
 
 
@@ -186,43 +218,80 @@ class BrowserSectionConfig(PluginConfigBase):
 
     __ui_label__ = "浏览器"
     __ui_icon__ = "public"
-    __ui_order__ = 2
+    __ui_order__ = 3
 
     headless: bool = Field(
-        default=True, description="不显示浏览器窗口运行，服务器环境请保持开启",
-        json_schema_extra={"title": "无头模式"},
+        default=True,
+        description="不显示浏览器窗口运行，服务器环境请保持开启",
+        json_schema_extra={
+            "label": "无头模式",
+            "hint": "服务器和容器环境请保持开启。",
+            "order": 0,
+        },
     )
     page_load_timeout: int = Field(
-        default=30, description="站点页面加载的最长等待时间",
-        json_schema_extra={"title": "页面加载超时（秒）"},
+        default=30,
+        description="站点页面加载的最长等待时间",
+        json_schema_extra={
+            "label": "页面加载超时（秒）",
+            "hint": "超过该时间仍未完成导航时判定加载失败。",
+            "order": 1,
+        },
     )
     action_delay: int = Field(
-        default=1000, description="回放录制操作之间的最小间隔",
-        json_schema_extra={"title": "操作间隔（毫秒）"},
+        default=1000,
+        description="回放录制操作之间的最小间隔",
+        json_schema_extra={
+            "label": "操作间隔（毫秒）",
+            "hint": "回放相邻录制操作之间的最小等待时间。",
+            "order": 2,
+        },
     )
     checkin_wait: int = Field(
         default=5,
         description="站点导航完成后、识图预检与动作回放前的等待时间",
-        json_schema_extra={"title": "签到前等待（秒）"},
+        json_schema_extra={
+            "label": "签到前等待（秒）",
+            "hint": "用于等待站点动态内容加载完成。",
+            "order": 3,
+        },
     )
     idle_timeout: int = Field(
         default=10,
         description="浏览器空闲超过该时长后自动关闭，0 表示禁用",
-        json_schema_extra={"title": "空闲自动关闭（分钟）"},
+        json_schema_extra={
+            "label": "空闲自动关闭（分钟）",
+            "hint": "设为 0 可禁用浏览器空闲自动关闭。",
+            "order": 4,
+        },
     )
 
 
 class PluginSectionConfig(PluginConfigBase):
-    """插件元信息（宿主硬性要求 [plugin] 节与 config_version 字段）"""
+    """宿主要求的插件基础配置。"""
 
     __ui_label__ = "插件"
     __ui_icon__ = "package"
-    __ui_order__ = 3
+    __ui_order__ = 0
 
+    enabled: bool = Field(
+        default=True,
+        description="是否启用自动签到插件",
+        json_schema_extra={
+            "label": "启用插件",
+            "hint": "关闭后不会安装依赖或启动 WebUI、浏览器和定时任务。",
+            "order": 0,
+        },
+    )
     config_version: str = Field(
         default="1.0.0",
         description="配置版本号（宿主要求的字段，勿手动修改）",
-        json_schema_extra={"title": "配置版本"},
+        json_schema_extra={
+            "label": "配置版本",
+            "order": 99,
+            "hidden": True,
+            "disabled": True,
+        },
     )
 
 
@@ -262,10 +331,13 @@ class AutoCheckinPlugin(MaiBotPlugin):
     # ==================== 生命周期 ====================
 
     async def on_load(self) -> None:
-        """插件加载 - 启动 WebUI 和定时任务"""
+        """插件加载 - 按配置决定是否启动内部服务"""
         self.data_dir = str(self.ctx.paths.data_dir)
         Path(self.data_dir).mkdir(parents=True, exist_ok=True)
 
+        if not self.config.plugin.enabled:
+            self.ctx.logger.info("自动签到插件已禁用，不启动内部服务")
+            return
         await self._start_services()
 
     async def on_unload(self) -> None:
@@ -280,8 +352,11 @@ class AutoCheckinPlugin(MaiBotPlugin):
         if scope != "self":
             return
 
-        self.ctx.logger.info("检测到插件配置更新，正在重启内部服务...")
+        self.ctx.logger.info("检测到插件配置更新，正在应用新配置...")
         await self._stop_services()
+        if not self.config.plugin.enabled:
+            self.ctx.logger.info("自动签到插件已禁用，内部服务已停止")
+            return
         await self._start_services()
 
     async def _start_services(self) -> None:
@@ -505,8 +580,24 @@ class AutoCheckinPlugin(MaiBotPlugin):
             logger.warning(f"无效的时区 '{tz_str}'，使用默认时区 Asia/Shanghai: {e}")
             return ZoneInfo("Asia/Shanghai")
 
+    @staticmethod
+    def _is_container_environment() -> bool:
+        """判断当前 Linux 进程是否明确运行在常见容器环境中。"""
+        if Path("/.dockerenv").exists() or Path("/run/.containerenv").exists():
+            return True
+
+        markers = ("docker", "containerd", "kubepods", "podman", "lxc")
+        for cgroup_path in (Path("/proc/1/cgroup"), Path("/proc/self/cgroup")):
+            try:
+                content = cgroup_path.read_text(encoding="utf-8", errors="ignore").lower()
+            except OSError:
+                continue
+            if any(marker in content for marker in markers):
+                return True
+        return False
+
     def _ensure_system_deps(self):
-        """在 Linux 上检查并自动安装 Camoufox 所需的系统库"""
+        """检查 Linux 系统库，仅在容器内自动安装缺失项。"""
         import platform
         if platform.system() != "Linux":
             return
@@ -535,33 +626,42 @@ class AutoCheckinPlugin(MaiBotPlugin):
         if not missing:
             return
 
-        logger.info(f"检测到缺少 {len(missing)} 个系统库，正在自动安装...")
-
         # 检测发行版并选择包管理器
         distro_id = self._detect_distro()
         pm_info = self._get_package_manager(distro_id)
+        missing_text = ", ".join(missing)
 
         if not pm_info:
-            logger.warning(
-                f"未识别的 Linux 发行版 ({distro_id})，请手动安装以下库:\n"
-                f"  {', '.join(missing)}")
-            return
+            raise RuntimeError(
+                f"缺少 Camoufox 系统库且无法识别 Linux 发行版 ({distro_id or '未知'})："
+                f"{missing_text}。请根据 README 手动安装后重启插件。"
+            )
 
         pm_name = pm_info["name"]
         packages = pm_info["packages"]
         install_cmd = pm_info["install_cmd"]
         update_cmd = pm_info.get("update_cmd")
+        manual_cmd = " ".join(install_cmd + packages)
 
-        logger.info(f"检测到包管理器: {pm_name}")
+        if not self._is_container_environment():
+            message = (
+                "检测到宿主机缺少 Camoufox 系统库，插件不会自动安装系统软件。"
+                f"缺失库: {missing_text}。请手动执行: {manual_cmd}"
+            )
+            logger.error(message)
+            raise RuntimeError(message)
+
+        logger.info(f"检测到容器环境缺少 {len(missing)} 个系统库，准备自动安装")
 
         import shutil
 
         if not shutil.which(pm_name):
-            logger.warning(
-                f"未找到包管理器 {pm_name}，请手动安装以下库:\n"
-                f"  {', '.join(missing)}")
-            return
+            raise RuntimeError(
+                f"容器内未找到包管理器 {pm_name}。缺失库: {missing_text}。"
+                f"请手动执行: {manual_cmd}"
+            )
 
+        logger.info(f"检测到包管理器: {pm_name}")
         try:
             if update_cmd:
                 self._run_install_command(
@@ -575,13 +675,10 @@ class AutoCheckinPlugin(MaiBotPlugin):
                 timeout=300,
             )
             logger.info("系统依赖安装完成")
-        except subprocess.CalledProcessError:
-            manual_cmd = " ".join(install_cmd + packages)
-            logger.warning(
-                f"自动安装系统依赖失败（可能需要 root 权限），请手动执行:\n"
-                f"  {manual_cmd}")
         except Exception as e:
-            logger.warning(f"检查系统依赖时出错: {e}")
+            message = f"容器内自动安装系统依赖失败: {e}。请手动执行: {manual_cmd}"
+            logger.error(message)
+            raise RuntimeError(message) from e
 
     @staticmethod
     def _detect_distro() -> str:
@@ -837,7 +934,11 @@ class AutoCheckinPlugin(MaiBotPlugin):
         sub = (kwargs.get("matched_groups") or {}).get("sub") or ""
 
         if not self._services_started:
-            await self.ctx.send.text("自动签到插件服务未就绪（可能正在启动或启动失败），请检查 MaiBot 日志。", stream_id)
+            if not self.config.plugin.enabled:
+                message = "自动签到插件已在配置中禁用。"
+            else:
+                message = "自动签到插件服务未就绪（可能正在启动或启动失败），请检查 MaiBot 日志。"
+            await self.ctx.send.text(message, stream_id)
             return False, "插件服务未就绪", 2
 
         if sub == "执行":
@@ -960,7 +1061,11 @@ class AutoCheckinPlugin(MaiBotPlugin):
         site_name = ((kwargs.get("matched_groups") or {}).get("site") or "").strip()
 
         if not self._services_started:
-            await self.ctx.send.text("自动签到插件服务未就绪（可能正在启动或启动失败），请检查 MaiBot 日志。", stream_id)
+            if not self.config.plugin.enabled:
+                message = "自动签到插件已在配置中禁用。"
+            else:
+                message = "自动签到插件服务未就绪（可能正在启动或启动失败），请检查 MaiBot 日志。"
+            await self.ctx.send.text(message, stream_id)
             return False, "插件服务未就绪", 2
 
         site = self.checkin_manager.get_site(site_name)
