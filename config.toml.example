@@ -1,0 +1,50 @@
+# 自动签到插件配置模板
+# Runner 首次加载插件时会根据 plugin.py 中的 config_model 自动生成同目录下的 config.toml。
+# 本文件仅用于查阅全部可配置项与默认值，插件不会读取它。
+# 如需手动准备配置，可复制为 config.toml 后修改；已有 config.toml 不会被插件更新覆盖。
+
+[plugin]
+# 插件总开关。关闭后不会安装依赖，也不会启动 WebUI、浏览器和定时任务
+enabled = true
+# 依赖自动安装授权。留空时插件绝不执行 pip、系统包管理器或 Camoufox 下载，
+# 只在日志中给出手动命令；精确填写 "我同意自动安装缺失依赖" 后才允许自动安装。
+# 不可变镜像、只读根文件系统或最小镜像请保持留空
+auto_install_consent = ""
+# 宿主要求的配置版本字段，勿手动修改
+config_version = "1.0.0"
+
+[webui]
+# WebUI 控制面板端口
+port = 9010
+# 监听地址。默认仅本机可访问；需要从容器或外部访问时改为 "0.0.0.0"
+host = "127.0.0.1"
+# 重要：请务必改为随机强密钥，否则任何能访问该端口的人都能操作浏览器
+# 可用 python -c "import secrets; print(secrets.token_urlsafe(32))" 生成
+token = "sk-change-me"
+# 登录空闲超时（分钟），超时未操作需重新登录
+session_timeout = 30
+# VNC 画面刷新间隔（毫秒）
+screenshot_interval = 500
+
+[schedule]
+# 定时签到计划，5 字段 Cron 表达式（分 时 日 月 周），每行一条
+# 多条规则示例：
+#   cron_rules = """
+#   30 8 * * *
+#   0 12 * * 1-5
+#   """
+cron_rules = "30 8 * * *"
+# 定时签到使用的 IANA 时区名称
+timezone = "Asia/Shanghai"
+
+[browser]
+# 无头模式。服务器和容器环境请保持 true
+headless = true
+# 页面加载超时（秒）
+page_load_timeout = 30
+# 回放录制操作之间的最小间隔（毫秒）
+action_delay = 1000
+# 站点导航完成后、识图预检与动作回放前的等待时间（秒）
+checkin_wait = 5
+# 浏览器空闲自动关闭（分钟），0 表示不关闭
+idle_timeout = 10

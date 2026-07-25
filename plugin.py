@@ -391,9 +391,15 @@ class AutoCheckinPlugin(MaiBotPlugin):
         # 确保 Python 包、系统依赖和 Camoufox 浏览器二进制已就绪。
         # 安装与下载均为阻塞操作，放入工作线程避免阻塞 Runner 心跳和配置 RPC。
         allow_install = self._has_install_consent(cfg.plugin.auto_install_consent)
-        await asyncio.to_thread(self._ensure_python_deps, allow_install)
-        await asyncio.to_thread(self._ensure_system_deps, allow_install)
-        await asyncio.to_thread(self._ensure_camoufox_binary, allow_install)
+        try:
+            await asyncio.to_thread(self._ensure_python_deps, allow_install)
+            await asyncio.to_thread(self._ensure_system_deps, allow_install)
+            await asyncio.to_thread(self._ensure_camoufox_binary, allow_install)
+        except Exception as e:
+            self.ctx.logger.error(f"依赖未就绪，自动签到内部服务未启动。{e}")
+            self.ctx.logger.error(
+                "补齐依赖或填写「自动安装依赖确认」后，在插件配置页保存一次即可重新启动。")
+            return
 
         # 核心组件
         self.browser_manager = BrowserManager(
@@ -563,14 +569,12 @@ class AutoCheckinPlugin(MaiBotPlugin):
 
     @staticmethod
     def _refuse_install(what: str, manual_cmd: str) -> RuntimeError:
-        """未获授权时记录并返回统一的拒绝异常。"""
-        message = (
+        """未获授权时构造统一的拒绝异常，由调用方统一记录日志。"""
+        return RuntimeError(
             f"{what}，插件未获授权自动安装依赖。请手动执行: {manual_cmd}；"
             f"如需插件自动处理，请在插件配置的「自动安装依赖确认」中填写"
             f"「{AUTO_INSTALL_CONSENT_PHRASE}」。"
         )
-        logger.error(message)
-        return RuntimeError(message)
 
     def _ensure_python_deps(self, allow_install: bool = False):
         """检查 Python 依赖，仅在获得授权后自动安装 requirements.txt"""

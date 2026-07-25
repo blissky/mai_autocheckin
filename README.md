@@ -159,7 +159,7 @@ zypper install -y gtk3 dbus-1-glib alsa-lib libX11-xcb1 libXcomposite1 libXdamag
 
 ## 配置项
 
-运行时配置文件为插件目录下由 Runner 首次加载时自动生成的 `config.toml`，也可在 MaiBot WebUI 的插件配置页中修改，保存后自动生效（插件会重启 WebUI 与定时任务）。配置结构和默认值以 `plugin.py` 中的 `config_model` 为准；`config.toml` 已被 Git 忽略，不会随插件更新覆盖用户配置。
+运行时配置文件为插件目录下由 Runner 首次加载时自动生成的 `config.toml`，也可在 MaiBot WebUI 的插件配置页中修改，保存后自动生效（插件会重启 WebUI 与定时任务）。配置结构和默认值以 `plugin.py` 中的 `config_model` 为准，仓库中的 `config.toml.example` 列出了全部可配置项供查阅；`config.toml` 已被 Git 忽略，不会随插件更新覆盖用户配置。
 
 > `[plugin] enabled` 是插件开关，默认开启；关闭后不会安装依赖或启动 WebUI、浏览器和定时任务。`auto_install_consent` 默认留空，表示禁止插件自动安装任何依赖。`config_version` 是宿主要求的隐藏字段，勿手动修改。
 
