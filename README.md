@@ -16,7 +16,7 @@ MaiBot 自动签到插件 —— 通过 Camoufox 浏览器自动化实现多网�
 - **消息通知**：签到完成后通过机器人会话推送结果
 - **登录持久化**：基于持久化浏览器 Profile，重启后无需重新登录
 - **空闲自动关闭**：浏览器空闲超时后自动关闭，节省资源
-- **WebUI 登录鉴权**：token 登录 + IP 绑定 + 可配置会话超时，防止面板裸露访问
+- **WebUI 登录鉴权**：token 登录 + HttpOnly 会话 Cookie + 可配置空闲超时，防止面板裸露访问
 - **依赖初始化**：首次启动自动安装 Python 依赖并下载 Camoufox；Linux 系统库仅在容器内自动安装
 
 ## 插件逻辑
@@ -121,7 +121,7 @@ zypper install -y gtk3 dbus-1-glib alsa-lib libX11-xcb1 libXcomposite1 libXdamag
 6. 点击「开始录制」，在浏览器中执行签到操作，然后「停止录制」
 7. 在「操作编辑」区域检查录制结果，可逐步编辑每个操作的参数、调整步骤顺序或手动增删步骤
 8. 将录制的操作保存到对应站点
-9. 登录后若切换访问 IP，或超过 `[webui] session_timeout` 配置的时间未进行操作，需要重新输入登录密钥
+9. 超过 `[webui] session_timeout` 配置的时间未进行操作后，需要重新输入登录密钥
 10. 签到流程会在每天设定的时间自动执行
 
 ### 操作编辑
@@ -273,7 +273,7 @@ WebUI 登录会话仅保存在内存中，插件重启后需要重新登录。
 - 浏览器空闲自动关闭按真实浏览器操作重新计时，避免“全部签到”执行中途被误关。
 - Web 端全部签到、命令签到和定时签到共用同一套签到结果判定逻辑与动作间隔配置。
 - 批量签到按“启动浏览器 → 逐站点导航 → `checkin_wait` → 前识图预检 → 动作回放 → 后识图验证”执行；`checkin_wait` 从站点 `page.goto(..., wait_until="domcontentloaded")` 返回后开始计时。
-- WebUI 通过 `token` 登录，并在切换访问 IP 或超过 `session_timeout` 未操作时要求重新登录。
+- WebUI 通过 `token` 登录，使用 HttpOnly 会话 Cookie，并在超过 `session_timeout` 未操作时要求重新登录。
 - WebUI 地址栏与站点列表的「前往」在浏览器未启动时会自动启动浏览器再导航。
 - MaiBot SDK 无内置定时器，插件使用自研 Cron 解析 + 30 秒轮询的 asyncio 任务实现调度。
 

@@ -187,8 +187,6 @@ class WebServer:
     @staticmethod
     def _auth_reason_message(reason: str) -> str:
         """将会话失效原因转换为用户可读文案"""
-        if reason == "ip_changed":
-            return "检测到访问 IP 已变化，请重新登录 WebUI。"
         if reason == "expired":
             return "登录已超时，请重新输入登录密钥。"
         return "未登录或登录已失效，请重新输入登录密钥。"
@@ -213,7 +211,7 @@ class WebServer:
 
     def _validate_session(self, request: web.Request,
                           refresh_activity: bool = False) -> tuple[str | None, str]:
-        """校验登录会话，支持 IP 绑定与空闲超时"""
+        """校验登录会话及空闲超时。"""
         self._cleanup_expired_sessions()
 
         session_id = request.cookies.get(self._auth_cookie_name, "")
@@ -223,11 +221,6 @@ class WebServer:
         session = self._sessions.get(session_id)
         if not session:
             return None, "unauthorized"
-
-        client_ip = self._get_client_ip(request)
-        if session.get("ip") != client_ip:
-            self._sessions.pop(session_id, None)
-            return None, "ip_changed"
 
         now = time.time()
         if now - session.get("last_active", 0) >= self.webui_session_timeout:
@@ -322,7 +315,6 @@ class WebServer:
 
         session_id = secrets.token_urlsafe(24)
         self._sessions[session_id] = {
-            "ip": client_ip,
             "last_active": time.time(),
         }
 
