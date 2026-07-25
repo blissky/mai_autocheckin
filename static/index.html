@@ -491,7 +491,10 @@ function setupTabs() {
 function connectWebSocket() {
   if (!isAuthenticated) return;
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  const basePath = location.pathname.endsWith('/')
+    ? location.pathname
+    : location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1);
+  ws = new WebSocket(`${protocol}//${location.host}${basePath}ws`);
   ws.binaryType = 'blob';
 
   ws.onopen = () => {
