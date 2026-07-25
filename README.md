@@ -4,6 +4,9 @@ MaiBot 自动签到插件 —— 通过 Camoufox 浏览器自动化实现多网�
 
 > 本插件由 [astrbot_plugin_autocheckin](https://github.com/StarDevProcess/astrbot_plugin_autocheckin) 迁移而来。
 
+> [!WARNING]
+> **首次启用前必须修改 WebUI 登录密钥。** `[webui] token` 的默认值 `sk-change-me` 只是占位符，不提供任何保护。任何知道该密钥并能访问 WebUI 端口的人都可以操控浏览器、读取已登录站点的会话，以及查看录制动作中明文保存的密码。请改成随机强密钥后再启用插件。
+
 ## 功能
 
 - **WebUI 可视化面板**：内置 VNC 式浏览器控制面板，在网页上直接操作浏览器
@@ -17,7 +20,7 @@ MaiBot 自动签到插件 —— 通过 Camoufox 浏览器自动化实现多网�
 - **登录持久化**：基于持久化浏览器 Profile，重启后无需重新登录
 - **空闲自动关闭**：浏览器空闲超时后自动关闭，节省资源
 - **WebUI 登录鉴权**：token 登录 + HttpOnly 会话 Cookie + 可配置空闲超时，防止面板裸露访问
-- **依赖初始化**：首次启动自动安装 Python 依赖并下载 Camoufox；Linux 系统库仅在容器内自动安装
+- **依赖初始化**：首次启动自动安装 Python 依赖并下载 Camoufox；Linux 系统库仅在用户显式授权后才自动安装
 
 ## 插件逻辑
 
@@ -82,7 +85,15 @@ pip install "camoufox[geoip]>=0.4.0" "aiohttp>=3.9.0" "playwright>=1.40.0"
 python -m camoufox fetch
 ```
 
-Linux 还需要 Camoufox 运行所需的 GTK、音频、图形和无障碍系统库。插件只会在确认运行于 Docker、containerd、Kubernetes、Podman 或 LXC 容器时自动安装；在宿主机运行且缺少系统库时，插件会停止启动并在日志中给出安装命令，不会静默修改系统。
+Linux 还需要 Camoufox 运行所需的 GTK、音频、图形和无障碍系统库。**插件默认不会安装任何系统软件**：检测到缺库时会停止启动，并在日志中给出当前发行版对应的安装命令，请手动执行。
+
+如果你确实希望插件自动调用系统包管理器补齐这些库，需要在插件配置的「自动安装系统库确认」（`[plugin] system_deps_consent`）中精确填写：
+
+```
+我同意自动安装缺失系统库
+```
+
+只有该项完全匹配时插件才会执行安装。使用不可变镜像、只读根文件系统或精简镜像时请保持留空，改为在构建镜像阶段预装系统库。
 
 根据发行版执行一条对应命令：
 
@@ -105,24 +116,25 @@ zypper install -y gtk3 dbus-1-glib alsa-lib libX11-xcb1 libXcomposite1 libXdamag
 
 ## 内置 Web 服务
 
-插件会自行启动 aiohttp HTTP 服务，监听 `[webui] host` 和 `port`（默认 `0.0.0.0:9010`），并通过同一端口的 `/ws` WebSocket 推送 JPEG 浏览器截图。MaiBot 1.1.0 的 manifest capability 仅覆盖宿主 RPC，没有可声明自建 HTTP 服务的 capability，因此 `_manifest.json` 中不会虚构网络监听能力。
+插件会自行启动 aiohttp HTTP 服务，监听 `[webui] host` 和 `port`（默认 `127.0.0.1:9010`），并通过同一端口的 `/ws` WebSocket 推送 JPEG 浏览器截图。MaiBot 1.1.0 的 manifest capability 仅覆盖宿主 RPC，没有可声明自建 HTTP 服务的 capability，因此 `_manifest.json` 中不会虚构网络监听能力。
 
-默认监听所有网络接口便于容器端口映射，但也会扩大暴露面。请修改默认 token，不要直接将端口暴露到公网，并使用带 HTTPS 和 WebSocket 转发的反向代理及防火墙访问控制。
+默认只监听本机回环地址，避免面板裸露。容器部署需要从外部访问时，可将 `host` 改为 `0.0.0.0`，但**改动前请先把 `token` 换成随机强密钥**，并通过带 HTTPS 和 WebSocket 转发的反向代理加防火墙限制访问，不要把端口直接暴露到公网。
 
 ## 使用方法
 
 ### WebUI 操作
 
-1. 插件加载后，通过宿主映射的 WebUI 端口打开控制面板（默认监听 `0.0.0.0:9010`，便于从容器外部访问）
-2. 先输入 WebUI 登录密钥（`[webui] token`）完成登录验证
-3. 点击「启动浏览器」启动 Camoufox 浏览器；也可以直接在地址栏或站点列表点击「前往」，若浏览器尚未启动会自动启动并导航
-4. 在 VNC 画面中操作浏览器，登录目标网站
-5. 在左侧面板添加站点
-6. 点击「开始录制」，在浏览器中执行签到操作，然后「停止录制」
-7. 在「操作编辑」区域检查录制结果，可逐步编辑每个操作的参数、调整步骤顺序或手动增删步骤
-8. 将录制的操作保存到对应站点
-9. 超过 `[webui] session_timeout` 配置的时间未进行操作后，需要重新输入登录密钥
-10. 签到流程会在每天设定的时间自动执行
+1. 先在插件配置中把 `[webui] token` 改为随机强密钥（默认值 `sk-change-me` 不可用于实际部署）
+2. 打开控制面板（默认监听 `127.0.0.1:9010`；容器部署需把 `host` 改为 `0.0.0.0` 并映射端口）
+3. 输入上一步设置的 WebUI 登录密钥完成登录验证
+4. 点击「启动浏览器」启动 Camoufox 浏览器；也可以直接在地址栏或站点列表点击「前往」，若浏览器尚未启动会自动启动并导航
+5. 在 VNC 画面中操作浏览器，登录目标网站
+6. 在左侧面板添加站点
+7. 点击「开始录制」，在浏览器中执行签到操作，然后「停止录制」
+8. 在「操作编辑」区域检查录制结果，可逐步编辑每个操作的参数、调整步骤顺序或手动增删步骤
+9. 将录制的操作保存到对应站点
+10. 超过 `[webui] session_timeout` 配置的时间未进行操作后，需要重新输入登录密钥
+11. 签到流程会在每天设定的时间自动执行
 
 ### 操作编辑
 
@@ -149,15 +161,16 @@ zypper install -y gtk3 dbus-1-glib alsa-lib libX11-xcb1 libXcomposite1 libXdamag
 
 ## 配置项
 
-配置文件为插件目录下的 `config.toml`，也可在 MaiBot WebUI 的插件配置页中修改，保存后自动生效（插件会重启 WebUI 与定时任务）。
+运行时配置文件为插件目录下由 Runner 首次加载时自动生成的 `config.toml`，也可在 MaiBot WebUI 的插件配置页中修改，保存后自动生效（插件会重启 WebUI 与定时任务）。配置结构和默认值以 `plugin.py` 中的 `config_model` 为准，仓库中的 `config.toml.example` 仅供参考；`config.toml` 已被 Git 忽略，不会随插件更新覆盖用户配置。
 
-> `[plugin] enabled` 是插件开关，默认开启；关闭后不会安装依赖或启动 WebUI、浏览器和定时任务。`config_version` 是宿主要求的隐藏字段，勿手动修改。
+> `[plugin] enabled` 是插件开关，默认开启；关闭后不会安装依赖或启动 WebUI、浏览器和定时任务。`system_deps_consent` 默认留空，表示禁止插件安装系统软件。`config_version` 是宿主要求的隐藏字段，勿手动修改。
 
 ### `[plugin]`
 
 | 配置 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `enabled` | bool | true | 是否启用插件；关闭后不启动任何内部服务 |
+| `system_deps_consent` | string | 空 | 系统库自动安装授权。留空时插件绝不调用包管理器；精确填写 `我同意自动安装缺失系统库` 后才允许自动安装 |
 | `config_version` | string | `1.0.0` | 宿主配置版本字段，在 WebUI 中隐藏且不可编辑 |
 
 ### `[webui]`
@@ -165,8 +178,8 @@ zypper install -y gtk3 dbus-1-glib alsa-lib libX11-xcb1 libXcomposite1 libXdamag
 | 配置 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `port` | int | 9010 | WebUI 控制面板端口 |
-| `host` | string | `0.0.0.0` | WebUI 监听地址，默认允许从容器外部访问 |
-| `token` | string | `sk-change-me` | WebUI 登录密钥，访问控制面板时需要输入 |
+| `host` | string | `127.0.0.1` | WebUI 监听地址，默认仅本机可访问；容器外访问需改为 `0.0.0.0` |
+| `token` | string | `sk-change-me` | WebUI 登录密钥，**必须修改**，占位值无任何保护作用 |
 | `session_timeout` | int | 30 | WebUI 登录超时（分钟），超时未操作需重新登录 |
 | `screenshot_interval` | int | 500 | VNC 画面刷新间隔（毫秒） |
 
@@ -251,9 +264,9 @@ WebUI 登录会话仅保存在内存中，插件重启后需要重新登录。
 
 ## 安全建议
 
-- **及时修改默认登录密钥**：`token` 默认值为 `sk-change-me`，启用后请立即修改
+- **必须修改默认登录密钥**：`token` 默认值 `sk-change-me` 仅为占位符，不提供任何保护。启用插件前请改为随机强密钥，例如 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成
 - **录制内容明文存储**：录制时通过键盘输入的所有文本（包括登录密码）会明文保存到 `sites.json`，请妥善保管数据目录，尽量利用浏览器持久化登录态而非在录制动作中输入密码
-- **网络暴露**：WebUI 默认监听 `0.0.0.0`，请勿将端口直接暴露到公网；建议限制端口访问并通过 HTTPS 反向代理转发
+- **网络暴露**：WebUI 默认只监听 `127.0.0.1`。改为 `0.0.0.0` 后面板会暴露给所有网络接口，此时必须已修改默认密钥，并限制端口访问、通过 HTTPS 反向代理转发，切勿直接暴露到公网
 - **目标 URL 限制**：浏览器仅允许访问解析到公网 IP 的 HTTP/HTTPS 地址。站点保存、手动导航、录制回放、重定向和页面子资源都会校验 DNS、IPv4 与 IPv6，并拒绝本机、私网、链路本地、云元数据和其他保留地址
 - **网络隔离**：应用层 URL 检查不能完全替代网络沙箱，也不能消除所有 DNS 重绑定时序风险；容器和宿主防火墙仍应限制插件访问内网及云元数据服务
 - **登录保护**：同一 IP 连续输错密钥 5 次后会被锁定，锁定时间按失败次数指数递增（最长 15 分钟）

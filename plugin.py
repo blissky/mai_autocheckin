@@ -149,11 +149,11 @@ class WebUISectionConfig(PluginConfigBase):
         },
     )
     host: str = Field(
-        default="0.0.0.0",
-        description="WebUI 监听地址，默认允许容器外部访问",
+        default="127.0.0.1",
+        description="WebUI 监听地址，默认仅本机可访问",
         json_schema_extra={
             "label": "监听地址",
-            "hint": "默认监听所有网络接口，容器外部可访问。",
+            "hint": "默认仅监听本机。需要从容器或外部访问时改为 0.0.0.0，并务必先修改登录密钥并限制端口访问。",
             "order": 1,
         },
     )
@@ -267,6 +267,9 @@ class BrowserSectionConfig(PluginConfigBase):
     )
 
 
+SYSTEM_DEPS_CONSENT_PHRASE = "我同意自动安装缺失系统库"
+
+
 class PluginSectionConfig(PluginConfigBase):
     """宿主要求的插件基础配置。"""
 
@@ -281,6 +284,20 @@ class PluginSectionConfig(PluginConfigBase):
             "label": "启用插件",
             "hint": "关闭后不会安装依赖或启动 WebUI、浏览器和定时任务。",
             "order": 0,
+        },
+    )
+    system_deps_consent: str = Field(
+        default="",
+        description=f"留空则不自动安装系统库；填写「{SYSTEM_DEPS_CONSENT_PHRASE}」后才允许",
+        json_schema_extra={
+            "label": "自动安装系统库确认",
+            "hint": (
+                f"仅当此项精确填写「{SYSTEM_DEPS_CONSENT_PHRASE}」时，插件才会调用系统包管理器"
+                "安装缺失的 Camoufox 系统库；留空时只在日志中给出手动安装命令。"
+                "使用不可变镜像或最小镜像时请保持留空。"
+            ),
+            "placeholder": SYSTEM_DEPS_CONSENT_PHRASE,
+            "order": 1,
         },
     )
     config_version: str = Field(
@@ -374,7 +391,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
         # 确保 Python 包、系统依赖和 Camoufox 浏览器二进制已就绪。
         # 安装与下载均为阻塞操作，放入工作线程避免阻塞 Runner 心跳和配置 RPC。
         await asyncio.to_thread(self._ensure_python_deps)
-        await asyncio.to_thread(self._ensure_system_deps)
+        await asyncio.to_thread(
+            self._ensure_system_deps, cfg.plugin.system_deps_consent)
         await asyncio.to_thread(self._ensure_camoufox_binary)
 
         # 核心组件
@@ -580,24 +598,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
             logger.warning(f"无效的时区 '{tz_str}'，使用默认时区 Asia/Shanghai: {e}")
             return ZoneInfo("Asia/Shanghai")
 
-    @staticmethod
-    def _is_container_environment() -> bool:
-        """判断当前 Linux 进程是否明确运行在常见容器环境中。"""
-        if Path("/.dockerenv").exists() or Path("/run/.containerenv").exists():
-            return True
-
-        markers = ("docker", "containerd", "kubepods", "podman", "lxc")
-        for cgroup_path in (Path("/proc/1/cgroup"), Path("/proc/self/cgroup")):
-            try:
-                content = cgroup_path.read_text(encoding="utf-8", errors="ignore").lower()
-            except OSError:
-                continue
-            if any(marker in content for marker in markers):
-                return True
-        return False
-
-    def _ensure_system_deps(self):
-        """检查 Linux 系统库，仅在容器内自动安装缺失项。"""
+    def _ensure_system_deps(self, consent: str = ""):
+        """检查 Linux 系统库，仅在用户显式确认后自动安装缺失项。"""
         import platform
         if platform.system() != "Linux":
             return
@@ -643,21 +645,22 @@ class AutoCheckinPlugin(MaiBotPlugin):
         update_cmd = pm_info.get("update_cmd")
         manual_cmd = " ".join(install_cmd + packages)
 
-        if not self._is_container_environment():
+        if consent.strip() != SYSTEM_DEPS_CONSENT_PHRASE:
             message = (
-                "检测到宿主机缺少 Camoufox 系统库，插件不会自动安装系统软件。"
-                f"缺失库: {missing_text}。请手动执行: {manual_cmd}"
+                f"缺少 Camoufox 系统库: {missing_text}。插件未获授权修改系统，不会自动安装。"
+                f"请手动执行: {manual_cmd}；"
+                f"如需插件自动安装，请在插件配置的「自动安装系统库确认」中填写「{SYSTEM_DEPS_CONSENT_PHRASE}」。"
             )
             logger.error(message)
             raise RuntimeError(message)
 
-        logger.info(f"检测到容器环境缺少 {len(missing)} 个系统库，准备自动安装")
+        logger.info(f"已获得自动安装授权，检测到缺少 {len(missing)} 个系统库，准备安装")
 
         import shutil
 
         if not shutil.which(pm_name):
             raise RuntimeError(
-                f"容器内未找到包管理器 {pm_name}。缺失库: {missing_text}。"
+                f"未找到包管理器 {pm_name}。缺失库: {missing_text}。"
                 f"请手动执行: {manual_cmd}"
             )
 
@@ -676,7 +679,7 @@ class AutoCheckinPlugin(MaiBotPlugin):
             )
             logger.info("系统依赖安装完成")
         except Exception as e:
-            message = f"容器内自动安装系统依赖失败: {e}。请手动执行: {manual_cmd}"
+            message = f"自动安装系统依赖失败: {e}。请手动执行: {manual_cmd}"
             logger.error(message)
             raise RuntimeError(message) from e
 

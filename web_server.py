@@ -34,14 +34,14 @@ class WebServer:
                  action_delay: int = 1000,
                  webui_token: str = "sk-change-me",
                  webui_session_timeout: int = 30,
-                 webui_host: str = "0.0.0.0",
+                 webui_host: str = "127.0.0.1",
                  vision_llm=None, use_vision_check: bool = False,
                  checkin_wait: int = 5):
         self.browser_manager = browser_manager
         self.checkin_manager = checkin_manager
         self.recorder = recorder
         self.port = port
-        self.host = webui_host or "0.0.0.0"
+        self.host = webui_host or "127.0.0.1"
         self.screenshot_interval = screenshot_interval / 1000.0  # 转秒
         self.action_delay = action_delay
         self.webui_token = webui_token or "sk-change-me"
