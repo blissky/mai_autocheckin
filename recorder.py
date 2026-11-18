@@ -50,6 +50,7 @@ class SiteConfig:
     last_result: str = ""  # 最后签到结果
     vision_region: dict = field(default_factory=dict)  # {x, y, width, height}
     vision_keywords: str = ""  # 识图关键词/正则表达式
+    low_usage: bool = False  # 整个签到流程是否启用降低占用模式
 
 
 class Recorder:
@@ -166,6 +167,7 @@ class CheckinManager:
                     "last_result": f.last_result,
                     "vision_region": f.vision_region,
                     "vision_keywords": f.vision_keywords,
+                    "low_usage": f.low_usage,
                 }
                 data.append(d)
             with open(self.config_file, "w", encoding="utf-8") as fp:
@@ -230,6 +232,7 @@ class CheckinManager:
                 "last_result": f.last_result,
                 "vision_region": f.vision_region,
                 "vision_keywords": f.vision_keywords,
+                "low_usage": f.low_usage,
             })
         return result
 
@@ -241,6 +244,15 @@ class CheckinManager:
             self._save_sites()
             return True
         return False
+
+    def update_site_low_usage(self, name: str, enabled: bool) -> bool:
+        """保存站点签到时的降低占用模式。"""
+        site = self.get_site(name)
+        if not site:
+            return False
+        site.low_usage = enabled
+        self._save_sites()
+        return True
 
     def update_site_vision(self, name: str, region: dict, keywords: str):
         """更新站点的识图选区和关键词"""
@@ -446,6 +458,22 @@ async def execute_site_checkin(browser_manager, checkin_manager: CheckinManager,
             "vision_matched": str,
         }
     """
+    # 模式在首次导航前应用，覆盖预检、动作回放、后验证及结果保存。
+    async with browser_manager.checkin_mode(site.low_usage):
+        return await _execute_site_checkin(
+            browser_manager, checkin_manager, site, action_delay,
+            vision_llm=vision_llm,
+            use_vision_check=use_vision_check,
+            checkin_wait=checkin_wait,
+        )
+
+
+async def _execute_site_checkin(browser_manager, checkin_manager: CheckinManager,
+                                site: SiteConfig, action_delay: int = 1000,
+                                vision_llm=None,
+                                use_vision_check: bool = False,
+                                checkin_wait: int = 5) -> dict:
+    """在已确定的浏览器模式中执行单站签到。"""
     raw_result = await run_checkin(
         browser_manager, site, action_delay,
         vision_llm=vision_llm,

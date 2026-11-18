@@ -13,6 +13,7 @@ import logging
 import os
 import socket
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -36,6 +37,10 @@ class BrowserManager:
         self._page = None
         self._cm = None  # AsyncCamoufox 上下文管理器
         self._lock = asyncio.Lock()
+        self._mode_lock = asyncio.Lock()
+        self._manual_low_usage = False
+        self._low_usage = False
+        self._checkin_active = False
         self._last_activity = 0.0  # 最后活动时间戳
         self._last_screenshot_error_log = 0.0
         self._validated_hosts: set[tuple[str, int]] = set()
@@ -47,6 +52,86 @@ class BrowserManager:
     @property
     def is_running(self) -> bool:
         return self._page is not None and not self._page.is_closed()
+
+    @property
+    def manual_low_usage(self) -> bool:
+        return self._manual_low_usage
+
+    @property
+    def low_usage(self) -> bool:
+        return self._low_usage
+
+    @property
+    def checkin_active(self) -> bool:
+        return self._checkin_active
+
+    @asynccontextmanager
+    async def manual_operation(self):
+        """人工操作与签到、模式切换共用锁，忙时直接拒绝。"""
+        if self._mode_lock.locked():
+            raise RuntimeError("浏览器正在执行操作，请完成后再试")
+        async with self._mode_lock:
+            yield
+
+    async def set_manual_low_usage(self, enabled: bool) -> None:
+        """设置地址栏模式，已打开的网页会重新加载。"""
+        async with self.manual_operation():
+            await self._set_low_usage(enabled, reopen=True)
+            self._manual_low_usage = enabled
+
+    @asynccontextmanager
+    async def checkin_mode(self, enabled: bool):
+        """在站点整个签到流程内固定模式，退出时恢复人工选择。"""
+        async with self._mode_lock:
+            self._checkin_active = True
+            try:
+                await self._set_low_usage(enabled)
+                yield
+            finally:
+                try:
+                    await self._set_low_usage(self._manual_low_usage)
+                finally:
+                    self._checkin_active = False
+
+    async def _configure_page(self) -> None:
+        self._page.set_default_timeout(self.page_load_timeout)
+        await self._page.emulate_media(reduced_motion="reduce")
+        await self._page.set_viewport_size({"width": 1366, "height": 768})
+        if self._low_usage:
+            # 初始化脚本在每次导航及子框架执行网页脚本前安装。
+            await self._page.add_init_script(
+                path=str(Path(__file__).parent / "static" / "low_usage.js"))
+
+    async def _set_low_usage(self, enabled: bool, reopen: bool = False) -> None:
+        """重建唯一页面，避免上一模式的资源拦截和脚本残留。"""
+        async with self._lock:
+            if self._low_usage == enabled:
+                return
+            previous = self._low_usage
+            self._low_usage = enabled
+            if not self.is_running:
+                return
+            url = self._page.url if reopen else ""
+            try:
+                self._context.remove_listener("page", self._handle_new_page)
+                await self._page.close()
+                self._page = await self._context.new_page()
+                await self._configure_page()
+                self._context.on("page", self._handle_new_page)
+                for page in self._context.pages:
+                    if page is not self._page:
+                        await page.close()
+                self.touch()
+                if url.startswith(("http://", "https://")):
+                    if not await self.navigate(url):
+                        logger.warning("降低占用模式已切换，但当前页面重新加载失败")
+            except (Exception, asyncio.CancelledError):
+                self._low_usage = previous
+                try:
+                    await self._close_browser()
+                except Exception as e:
+                    logger.warning(f"模式切换失败后清理浏览器出错: {e}")
+                raise
 
     def touch(self):
         """更新最后活动时间戳"""
@@ -133,7 +218,11 @@ class BrowserManager:
         return url.strip()
 
     async def _handle_network_route(self, route, request) -> None:
-        """阻止页面、重定向和子资源访问非公网网络。"""
+        """拦截音视频资源，并阻止其他请求访问非公网网络。"""
+        # 两种模式均保留图片和网络字体，维持验证码、图标及文字布局。
+        if request.resource_type == "media":
+            await route.abort("blockedbyclient")
+            return
         parsed = urlparse(request.url)
         if parsed.scheme in {"data", "blob", "about"}:
             await route.continue_()
@@ -156,11 +245,37 @@ class BrowserManager:
             return
         websocket.connect_to_server()
 
+    async def _handle_new_page(self, page) -> None:
+        """关闭原生同页打开策略未拦住的额外页面。"""
+        if page is self._page:
+            return
+        try:
+            await page.close()
+        except Exception as e:
+            if not page.is_closed():
+                logger.warning(f"关闭额外标签页失败: {e}")
+
+    async def _close_browser(self) -> None:
+        """清理浏览器上下文，调用方须持有生命周期锁。"""
+        self._page = None
+        try:
+            if self._context:
+                self._context.remove_listener("page", self._handle_new_page)
+            if self._cm:
+                await self._cm.__aexit__(None, None, None)
+        finally:
+            self._cm = None
+            self._context = None
+
     async def launch(self):
         """启动 Camoufox 浏览器"""
         async with self._lock:
             if self.is_running:
                 return self._page
+
+            # 主页面关闭后，上下文仍可能存活；先回收再创建新实例。
+            if self._cm:
+                await self._close_browser()
 
             logger.info("正在启动 Camoufox 浏览器...")
 
@@ -202,6 +317,11 @@ class BrowserManager:
                     firefox_user_prefs={
                         "layout.css.devPixelsPerPx": "1.0",
                         "layout.css.dpi": 96,
+                        # 新窗口和脚本弹窗优先在当前标签页打开。
+                        "browser.link.open_newwindow": 1,
+                        "browser.link.open_newwindow.restriction": 0,
+                        # 保留动画图片首次展示，减少循环解码和重绘。
+                        "image.animation_mode": "once",
                     },
                 )
                 self._context = await self._cm.__aenter__()
@@ -209,12 +329,28 @@ class BrowserManager:
                 if hasattr(self._context, "route_web_socket"):
                     await self._context.route_web_socket(
                         "**/*", self._handle_websocket_route)
-                logger.info("Camoufox 浏览器已启动")
+                # 先选定主页面，再监听新页面，避免关闭自己创建的主页面。
+                if self._context.pages:
+                    self._page = self._context.pages[0]
+                else:
+                    self._page = await self._context.new_page()
+                self._context.on("page", self._handle_new_page)
+                for page in self._context.pages:
+                    if page is not self._page:
+                        await page.close()
 
-            except ImportError as e:
-                logger.error(f"导入 camoufox 失败: {e}")
-                raise RuntimeError(f"缺少依赖: {e}")
-            except Exception as e:
+                await self._configure_page()
+
+            except (Exception, asyncio.CancelledError) as e:
+                try:
+                    await self._close_browser()
+                except Exception as cleanup_error:
+                    logger.warning(f"浏览器初始化失败后清理出错: {cleanup_error}")
+                if isinstance(e, asyncio.CancelledError):
+                    raise
+                if isinstance(e, ImportError):
+                    logger.error(f"导入 camoufox 失败: {e}")
+                    raise RuntimeError(f"缺少依赖: {e}")
                 err_msg = str(e)
                 if "fetch" in err_msg.lower() or "not found" in err_msg.lower() or "executable" in err_msg.lower():
                     logger.error(
@@ -226,17 +362,6 @@ class BrowserManager:
                     )
                 raise
 
-            # 获取或创建 Page
-            if self._context.pages:
-                self._page = self._context.pages[0]
-            else:
-                self._page = await self._context.new_page()
-
-            self._page.set_default_timeout(self.page_load_timeout)
-
-            # 固定视口大小，所有坐标以此为基准
-            await self._page.set_viewport_size({"width": 1366, "height": 768})
-
             self.touch()
             logger.info("Camoufox 浏览器启动完成")
             return self._page
@@ -244,17 +369,11 @@ class BrowserManager:
     async def shutdown(self):
         """关闭浏览器"""
         async with self._lock:
-            self._page = None
-
-            if self._cm:
-                try:
-                    await self._cm.__aexit__(None, None, None)
-                    logger.info("Camoufox 浏览器已关闭")
-                except Exception as e:
-                    logger.warning(f"关闭浏览器时出错: {e}")
-                finally:
-                    self._cm = None
-                    self._context = None
+            try:
+                await self._close_browser()
+                logger.info("Camoufox 浏览器已关闭")
+            except Exception as e:
+                logger.warning(f"关闭浏览器时出错: {e}")
 
     async def navigate(self, url: str) -> bool:
         """安全导航到仅解析至公网地址的 URL。"""

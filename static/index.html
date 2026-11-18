@@ -42,6 +42,8 @@ body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans SC", sans-seri
   font-size: 13px; outline: none;
 }
 .toolbar input:focus { border-color: var(--accent2); }
+.low-usage-control { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text2); white-space: nowrap; }
+.low-usage-control input { accent-color: var(--accent2); }
 
 /* Buttons */
 .btn {
@@ -357,6 +359,9 @@ body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans SC", sans-seri
   <div class="main">
     <div class="toolbar">
       <input type="text" id="urlBar" placeholder="输入URL并回车导航..." onkeydown="if(event.key==='Enter')navigateTo()">
+      <label class="low-usage-control" id="lowUsageLabel" title="减少资源加载和动画，切换后会刷新当前页面">
+        <input type="checkbox" id="lowUsageToggle" onchange="setBrowserLowUsage(this.checked)">降低占用
+      </label>
       <button class="btn btn-primary btn-sm" onclick="navigateTo()">前往</button>
       <button class="btn btn-warning btn-sm" onclick="showSendTextModal()">发送文本</button>
       <button class="btn btn-ghost btn-sm" onclick="launchBrowser()" id="btnLaunch">启动浏览器</button>
@@ -442,6 +447,13 @@ let isAuthenticated = false;
 let runtimeStarted = false;
 let statusTimer = null;
 let fpsTimer = null;
+let manualLowUsage = false;
+let activeLowUsage = false;
+let checkinActive = false;
+let lowUsageUpdating = false;
+let lowUsageVersion = 0;
+let siteModeRevision = 0;
+const siteLowUsageUpdates = new Map();
 
 // ==================== Init ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -823,6 +835,7 @@ async function navigateTo() {
 }
 
 async function refreshStatus() {
+  const modeVersion = lowUsageVersion;
   try {
     const s = await api('/api/status');
     const dot = document.getElementById('browserDot');
@@ -838,12 +851,57 @@ async function refreshStatus() {
     document.getElementById('siteCountDisplay').textContent = s.site_count || s.forum_count || 0;
     const urlBar = document.getElementById('urlBar');
     if (s.current_url && document.activeElement !== urlBar) urlBar.value = s.current_url;
+    if (modeVersion === lowUsageVersion && !lowUsageUpdating) {
+      manualLowUsage = !!s.low_usage;
+      activeLowUsage = !!s.active_low_usage;
+      checkinActive = !!s.checkin_active;
+      updateLowUsageControl();
+    }
   } catch(e) {}
+}
+
+function updateLowUsageControl() {
+  const toggle = document.getElementById('lowUsageToggle');
+  toggle.checked = manualLowUsage;
+  toggle.disabled = lowUsageUpdating || checkinActive;
+  document.getElementById('lowUsageLabel').title = checkinActive
+    ? `签到中，由站点设置控制降低占用模式（当前${activeLowUsage ? '开启' : '关闭'}）`
+    : '减少资源加载和动画，切换后会刷新当前页面；浏览器未启动时仅保存本次选择';
+}
+
+async function setBrowserLowUsage(enabled) {
+  if (lowUsageUpdating || checkinActive) {
+    updateLowUsageControl();
+    return;
+  }
+  const previous = manualLowUsage;
+  lowUsageUpdating = true;
+  lowUsageVersion++;
+  manualLowUsage = enabled;
+  updateLowUsageControl();
+  try {
+    const r = await api('/api/browser/low-usage', 'POST', { enabled });
+    if (!r.success) throw new Error(r.message || '切换降低占用失败');
+    manualLowUsage = !!r.low_usage;
+    activeLowUsage = !!r.active_low_usage;
+    toast(manualLowUsage ? '已开启降低占用' : '已关闭降低占用', 'success');
+  } catch(e) {
+    manualLowUsage = previous;
+    if (e.message !== 'AUTH_REQUIRED') toast(e.message || '切换降低占用失败', 'error');
+  } finally {
+    lowUsageUpdating = false;
+    lowUsageVersion++;
+    updateLowUsageControl();
+    refreshStatus();
+  }
 }
 
 // ==================== Site Management ====================
 async function refreshSites() {
-  sites = await api('/api/sites');
+  const revision = siteModeRevision;
+  const data = await api('/api/sites');
+  if (revision !== siteModeRevision) return;
+  sites = data;
   renderSites();
   updateSaveTargetSelect();
   updateVisionSaveTargetSelect();
@@ -855,7 +913,7 @@ function renderSites() {
     container.innerHTML = '<p style="color:var(--text2);font-size:13px;text-align:center;padding:20px">暂无站点，请添加</p>';
     return;
   }
-  container.innerHTML = sites.map(f => `
+  container.innerHTML = sites.map((f, index) => `
     <div class="site-item">
       <div class="si-header">
         <span class="si-name">${esc(f.name)}</span>
@@ -868,6 +926,9 @@ function renderSites() {
         ${f.last_checkin ? `&nbsp; 上次: <span class="si-badge ${f.last_result === '成功' || f.last_result?.startsWith('成功') ? 'ok' : 'fail'}">${esc(f.last_result)}</span> <span style="font-size:11px;color:var(--text2)">${esc(f.last_checkin)}</span>` : ''}
       </div>
       <div class="si-actions">
+        <label class="low-usage-control" title="该站点签到全程使用降低占用模式；保留图片和字体，可能影响动画或定时交互">
+          <input type="checkbox" onchange="setSiteLowUsage(this, ${index})" ${(siteLowUsageUpdates.has(f.name) ? siteLowUsageUpdates.get(f.name) : f.low_usage) ? 'checked' : ''} ${siteLowUsageUpdates.has(f.name) ? 'disabled' : ''}>降低占用
+        </label>
         <button class="btn btn-primary btn-sm" onclick="goToSite('${esc(f.url)}')">前往</button>
         <button class="btn btn-success btn-sm" onclick="checkinOne('${esc(f.name)}')" ${!f.has_actions ? 'disabled title="请先录制操作"' : ''}>签到</button>
         <button class="btn btn-ghost btn-sm" onclick="toggleSite('${esc(f.name)}')">${f.enabled ? '禁用' : '启用'}</button>
@@ -906,6 +967,31 @@ async function removeSite(name) {
 async function toggleSite(name) {
   await api(`/api/sites/${encodeURIComponent(name)}/toggle`, 'POST');
   refreshSites();
+}
+
+async function setSiteLowUsage(toggle, index) {
+  const site = sites[index];
+  if (!site || siteLowUsageUpdates.has(site.name)) return;
+  const previous = !!site.low_usage;
+  const enabled = toggle.checked;
+  siteLowUsageUpdates.set(site.name, enabled);
+  siteModeRevision++;
+  toggle.disabled = true;
+  try {
+    const r = await api(`/api/sites/${encodeURIComponent(site.name)}/low-usage`, 'POST', { enabled });
+    if (!r.success) throw new Error(r.message || '保存降低占用设置失败');
+    const current = sites.find(f => f.name === site.name);
+    if (current) current.low_usage = typeof r.low_usage === 'boolean' ? r.low_usage : enabled;
+    toast(`${site.name}：${enabled ? '已开启' : '已关闭'}签到降低占用`, 'success');
+  } catch(e) {
+    const current = sites.find(f => f.name === site.name);
+    if (current) current.low_usage = previous;
+    if (e.message !== 'AUTH_REQUIRED') toast(e.message || '保存降低占用设置失败', 'error');
+  } finally {
+    siteLowUsageUpdates.delete(site.name);
+    siteModeRevision++;
+    renderSites();
+  }
 }
 
 async function goToSite(url) {

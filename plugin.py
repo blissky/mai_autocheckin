@@ -863,7 +863,8 @@ class AutoCheckinPlugin(MaiBotPlugin):
         while True:
             try:
                 await asyncio.sleep(30)  # 每30秒检查一次
-                if self.browser_manager and self.browser_manager.is_running:
+                if (self.browser_manager and self.browser_manager.is_running
+                        and not self.browser_manager.checkin_active):
                     idle = self.browser_manager.idle_seconds
                     if idle >= timeout_seconds:
                         logger.info(

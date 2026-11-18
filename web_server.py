@@ -103,11 +103,13 @@ class WebServer:
         app.router.add_post("/api/browser/launch", self._api_browser_launch)
         app.router.add_post("/api/browser/shutdown", self._api_browser_shutdown)
         app.router.add_post("/api/browser/navigate", self._api_browser_navigate)
+        app.router.add_post("/api/browser/low-usage", self._api_browser_low_usage)
         # 站点管理
         app.router.add_get("/api/sites", self._api_get_sites)
         app.router.add_post("/api/sites", self._api_add_site)
         app.router.add_delete("/api/sites/{name}", self._api_remove_site)
         app.router.add_post("/api/sites/{name}/toggle", self._api_toggle_site)
+        app.router.add_post("/api/sites/{name}/low-usage", self._api_site_low_usage)
         app.router.add_post("/api/sites/{name}/actions", self._api_save_actions)
         app.router.add_get("/api/sites/{name}/actions", self._api_get_actions)
         # 兼容旧版接口
@@ -394,6 +396,15 @@ class WebServer:
     async def _handle_ws_message(self, data: str, ws=None):
         """处理来自 WebUI 的鼠标/键盘事件"""
         try:
+            async with self.browser_manager.manual_operation():
+                await self._dispatch_ws_message(data, ws)
+        except RuntimeError as e:
+            if ws is not None:
+                await ws.send_json({"type": "error", "message": str(e)})
+
+    async def _dispatch_ws_message(self, data: str, ws=None):
+        """在手动操作锁内执行浏览器事件。"""
+        try:
             msg = json.loads(data)
             action = msg.get("action", "")
 
@@ -510,6 +521,9 @@ class WebServer:
         return web.json_response({
             "browser_running": self.browser_manager.is_running,
             "current_url": url,
+            "low_usage": self.browser_manager.manual_low_usage,
+            "active_low_usage": self.browser_manager.low_usage,
+            "checkin_active": self.browser_manager.checkin_active,
             "recording": self.recorder.is_recording,
             "recording_actions": len(self.recorder.actions),
             "site_count": len(self.checkin_manager.sites),
@@ -522,21 +536,35 @@ class WebServer:
     async def _api_browser_launch(self, request: web.Request) -> web.Response:
         """启动浏览器"""
         try:
-            await self.browser_manager.launch()
+            async with self.browser_manager.manual_operation():
+                await self.browser_manager.launch()
             return web.json_response({"success": True, "message": "浏览器已启动"})
+        except RuntimeError as e:
+            return web.json_response({"success": False, "message": str(e)}, status=409)
         except Exception as e:
             return web.json_response({"success": False, "message": str(e)}, status=500)
 
     async def _api_browser_shutdown(self, request: web.Request) -> web.Response:
         """关闭浏览器"""
         try:
-            await self.browser_manager.shutdown()
+            async with self.browser_manager.manual_operation():
+                await self.browser_manager.shutdown()
             return web.json_response({"success": True, "message": "浏览器已关闭"})
+        except RuntimeError as e:
+            return web.json_response({"success": False, "message": str(e)}, status=409)
         except Exception as e:
             return web.json_response({"success": False, "message": str(e)}, status=500)
 
     async def _api_browser_navigate(self, request: web.Request) -> web.Response:
         """导航到指定 URL"""
+        try:
+            async with self.browser_manager.manual_operation():
+                return await self._navigate_browser(request)
+        except RuntimeError as e:
+            return web.json_response({"success": False, "message": str(e)}, status=409)
+
+    async def _navigate_browser(self, request: web.Request) -> web.Response:
+        """在手动操作锁内完成校验、启动和导航。"""
         body = await request.json()
         url = body.get("url", "")
         if not url:
@@ -565,6 +593,24 @@ class WebServer:
         return web.json_response({
             "success": ok,
             "message": "导航成功" if ok else "导航失败",
+        })
+
+    async def _api_browser_low_usage(self, request: web.Request) -> web.Response:
+        """切换地址栏的降低占用模式。"""
+        body = await request.json()
+        if not isinstance(body, dict) or type(body.get("enabled")) is not bool:
+            return web.json_response({"success": False, "message": "enabled 必须为布尔值"}, status=400)
+        try:
+            await self.browser_manager.set_manual_low_usage(body["enabled"])
+        except RuntimeError as e:
+            return web.json_response({"success": False, "message": str(e)}, status=409)
+        except Exception as e:
+            return web.json_response({"success": False, "message": str(e)}, status=500)
+        return web.json_response({
+            "success": True,
+            "message": "已开启降低占用" if body["enabled"] else "已关闭降低占用",
+            "low_usage": self.browser_manager.manual_low_usage,
+            "active_low_usage": self.browser_manager.low_usage,
         })
 
     # 站点管理 API
@@ -598,6 +644,16 @@ class WebServer:
         name = request.match_info["name"]
         ok = self.checkin_manager.toggle_site(name)
         return web.json_response({"success": ok})
+
+    async def _api_site_low_usage(self, request: web.Request) -> web.Response:
+        """保存站点签到使用的降低占用模式。"""
+        body = await request.json()
+        if not isinstance(body, dict) or type(body.get("enabled")) is not bool:
+            return web.json_response({"success": False, "message": "enabled 必须为布尔值"}, status=400)
+        name = request.match_info["name"]
+        if not self.checkin_manager.update_site_low_usage(name, body["enabled"]):
+            return web.json_response({"success": False, "message": "站点不存在"}, status=404)
+        return web.json_response({"success": True, "low_usage": body["enabled"]})
 
     async def _api_save_actions(self, request: web.Request) -> web.Response:
         """保存录制的操作到指定站点"""
